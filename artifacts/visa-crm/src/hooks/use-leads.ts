@@ -1,6 +1,30 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
+async function logActivity(opts: {
+  action: string;
+  entity_type: string;
+  entity_id?: string;
+  description: string;
+}) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    let actor_name: string | null = null;
+    if (user) {
+      const { data: p } = await supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle();
+      actor_name = p?.full_name ?? null;
+    }
+    await supabase.from('activity_log').insert([{
+      ...opts,
+      entity_id: opts.entity_id ?? null,
+      actor_id: user?.id ?? null,
+      actor_name,
+    }]);
+  } catch {
+    // Non-critical — swallow silently
+  }
+}
+
 export function useLeads(filters?: { status?: string, source?: string, agent?: string, search?: string }) {
   return useQuery({
     queryKey: ['leads', filters],
@@ -116,15 +140,20 @@ export function useCreateLead() {
       const { data, error } = await supabase.from('leads').insert([lead]).select().single();
       if (error) throw error;
       
-      // Also log creation in history
       if (data) {
         await supabase.from('lead_status_history').insert([{
           lead_id: data.id,
           status: data.status,
           note: 'Lead created',
         }]);
+        logActivity({
+          action: 'create_lead',
+          entity_type: 'lead',
+          entity_id: data.id,
+          description: `New lead created for ${data.pax_name}${data.service_name ? ` — ${data.service_name}` : ''}`,
+        });
       }
-      
+
       return data;
     },
     onSuccess: () => {
@@ -145,8 +174,14 @@ export function useUpdateLead() {
         await supabase.from('lead_status_history').insert([{
           lead_id: id,
           status: updates.status,
-          note: 'Status updated manually'
+          note: 'Status updated manually',
         }]);
+        logActivity({
+          action: 'update_status',
+          entity_type: 'lead',
+          entity_id: id,
+          description: `Lead status changed to "${updates.status}"${data.pax_name ? ` for ${data.pax_name}` : ''}`,
+        });
       }
 
       return data;
@@ -178,6 +213,12 @@ export function useCreateLeadPayment() {
     mutationFn: async (payment: any) => {
       const { data, error } = await supabase.from('lead_payments').insert([payment]).select().single();
       if (error) throw error;
+      logActivity({
+        action: 'record_payment',
+        entity_type: 'payment',
+        entity_id: payment.lead_id,
+        description: `Payment of ₹${payment.amount} recorded via ${payment.method || 'Cash'}`,
+      });
       return data;
     },
     onSuccess: (data) => {

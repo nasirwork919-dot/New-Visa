@@ -175,8 +175,12 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
       };
       let leadId = lead?.id;
       if (isEdit) {
-        await updateLead.mutateAsync({ id: lead.id, updates: payload, logStatus: payload.status !== lead.status });
+        const statusChanged = payload.status !== lead.status;
+        await updateLead.mutateAsync({ id: lead.id, updates: payload, logStatus: statusChanged });
         toast({ title: 'Lead updated successfully' });
+        if (statusChanged && (payload.whatsapp || payload.phone)) {
+          setTimeout(() => openWhatsApp({ ...lead, ...payload }, 'status_update'), 300);
+        }
       } else {
         const created = await createLead.mutateAsync(payload);
         leadId = (created as any)?.id || lead?.id;

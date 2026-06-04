@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
-import { useRoles, useCreateRole, useUpdateRole } from '@/hooks/use-team';
+import { useRoles, useCreateRole, useUpdateRole, useDeleteRole } from '@/hooks/use-team';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Pencil, Shield, ShieldCheck } from 'lucide-react';
+import { Plus, Pencil, Trash2, Shield, ShieldCheck } from 'lucide-react';
 
 const ALL_PERMISSIONS: { key: string; label: string; group: string }[] = [
   { key: 'dash_view', label: 'View Dashboard', group: 'Dashboard' },
@@ -130,8 +130,20 @@ function RoleModal({ open, onClose, role }: { open: boolean; onClose: () => void
 export default function Roles() {
   const { can } = useAuth();
   const { data: roles, isLoading } = useRoles();
+  const deleteRole = useDeleteRole();
+  const { toast } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [editRole, setEditRole] = useState<any>(null);
+
+  const handleDelete = async (role: any) => {
+    if (!window.confirm(`Delete role "${role.name}"? This cannot be undone.`)) return;
+    try {
+      await deleteRole.mutateAsync(role.id);
+      toast({ title: `Role "${role.name}" deleted` });
+    } catch (e: any) {
+      toast({ title: 'Cannot delete role', description: e.message, variant: 'destructive' });
+    }
+  };
 
   if (!can('roles_manage')) {
     return <SidebarLayout><div className="p-8 text-muted-foreground">Access denied.</div></SidebarLayout>;
@@ -163,10 +175,18 @@ export default function Roles() {
                       <CardTitle className="text-base">{role.name}</CardTitle>
                       {role.is_preset && <Badge variant="secondary" className="text-xs">System</Badge>}
                     </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8"
-                      onClick={() => { setEditRole(role); setModalOpen(true); }}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8"
+                        onClick={() => { setEditRole(role); setModalOpen(true); }}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      {!role.is_preset && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => handleDelete(role)} disabled={deleteRole.isPending}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   {role.description && <p className="text-sm text-muted-foreground">{role.description}</p>}
                 </CardHeader>
