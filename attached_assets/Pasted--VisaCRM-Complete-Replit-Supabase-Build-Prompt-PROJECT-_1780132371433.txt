@@ -1,0 +1,1062 @@
+# VisaCRM — Complete Replit + Supabase Build Prompt
+
+---
+
+## PROJECT OVERVIEW
+
+Build a full-stack **Travel Agency CRM** called **VisaCRM** using:
+- **Frontend**: React (Vite) + Tailwind CSS
+- **Backend**: Supabase (PostgreSQL database, Auth, Storage, Realtime)
+- **Hosting**: Replit
+
+This is a production-grade CRM for a travel/visa agency to manage leads, clients, payments, services, agents, and WhatsApp communication.
+
+---
+
+## TECH STACK
+
+```
+Frontend:   React 18 + Vite
+Styling:    Tailwind CSS + @tabler/icons-react
+Database:   Supabase (PostgreSQL)
+Auth:       Supabase Auth (email + password)
+Storage:    Supabase Storage (for document uploads)
+Realtime:   Supabase Realtime (live lead updates)
+HTTP:       @supabase/supabase-js client
+State:      React Context + useState/useEffect
+Routing:    React Router v6
+```
+
+### Install these packages:
+```bash
+npm install @supabase/supabase-js react-router-dom @tabler/icons-react
+npm install -D tailwindcss postcss autoprefixer
+```
+
+---
+
+## ENVIRONMENT VARIABLES
+
+Create a `.env` file in the root:
+```env
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+---
+
+## SUPABASE DATABASE SCHEMA
+
+Run the following SQL in your Supabase SQL editor to create all tables:
+
+```sql
+-- ─────────────────────────────────────
+-- ENABLE UUID EXTENSION
+-- ─────────────────────────────────────
+create extension if not exists "uuid-ossp";
+
+-- ─────────────────────────────────────
+-- ROLES TABLE
+-- ─────────────────────────────────────
+create table roles (
+  id uuid primary key default uuid_generate_v4(),
+  name text unique not null,
+  description text,
+  is_preset boolean default false,
+  permissions text[] default '{}',
+  created_at timestamptz default now()
+);
+
+-- Insert preset roles
+insert into roles (name, description, is_preset, permissions) values
+('Admin', 'Full access to everything', true, ARRAY[
+  'dash_view','dash_mis','dash_revenue',
+  'leads_view_own','leads_view_all','leads_add','leads_edit','leads_delete','leads_assign',
+  'pay_view','pay_edit','pay_balance',
+  'svc_view','svc_manage','svc_price',
+  'walkin_view','walkin_add',
+  'users_view','users_manage','roles_manage'
+]),
+('Manager', 'All leads, no user/role management', true, ARRAY[
+  'dash_view','dash_mis','dash_revenue',
+  'leads_view_own','leads_view_all','leads_add','leads_edit','leads_assign',
+  'pay_view','pay_edit','pay_balance',
+  'svc_view','svc_manage',
+  'walkin_view','walkin_add','users_view'
+]),
+('Agent', 'Own leads only, no financials or MIS', true, ARRAY[
+  'dash_view',
+  'leads_view_own','leads_add','leads_edit',
+  'svc_view',
+  'walkin_view','walkin_add'
+]);
+
+-- ─────────────────────────────────────
+-- PROFILES TABLE (extends Supabase auth.users)
+-- ─────────────────────────────────────
+create table profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  full_name text not null,
+  phone text,
+  whatsapp text,
+  role_id uuid references roles(id),
+  role_name text default 'Agent',
+  status text default 'active' check (status in ('active','inactive')),
+  avatar_color text default 'blue',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- Auto-create profile on signup
+create or replace function handle_new_user()
+returns trigger as $$
+begin
+  insert into profiles (id, full_name, role_name)
+  values (new.id, new.raw_user_meta_data->>'full_name', 'Agent');
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure handle_new_user();
+
+-- ─────────────────────────────────────
+-- SERVICES TABLE
+-- ─────────────────────────────────────
+create table services (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  category text not null,
+  country text not null,
+  base_price numeric(10,2) default 0,
+  sub_services text[] default '{}',
+  is_active boolean default true,
+  created_by uuid references profiles(id),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- Insert default services
+insert into services (name, category, country, base_price, sub_services) values
+('UK Visa', 'Visa', 'UK', 15000, ARRAY['Student','Tourist','Business','Work']),
+('Ireland Visa', 'Visa', 'Ireland', 18000, ARRAY['Student','Tourist','Business']),
+('Schengen Visa', 'Visa', 'Europe', 8000, ARRAY['Tourist','Business','Transit']),
+('Dubai Visa', 'Visa', 'UAE', 5000, ARRAY['Tourist','Business','Transit']),
+('Job Visa', 'Job', 'Multiple', 22000, ARRAY['Skilled Worker','Employer Sponsored']),
+('Apostille', 'Apostille', 'India', 3000, ARRAY['Birth Cert','Marriage Cert','Degree']),
+('Ticket', 'Travel', 'Any', 1000, ARRAY['Economy','Business']),
+('Insurance', 'Insurance', 'Any', 2500, ARRAY['Travel','Medical','Student']);
+
+-- ─────────────────────────────────────
+-- LEADS TABLE
+-- ─────────────────────────────────────
+create table leads (
+  id uuid primary key default uuid_generate_v4(),
+  pax_name text not null,
+  phone text not null,
+  whatsapp text,
+  email text,
+  service_id uuid references services(id),
+  service_name text not null,
+  sub_service text,
+  destination_country text,
+  source text not null check (source in (
+    'Walk-in','WhatsApp','Instagram','Facebook','Referral','Google','Online','Other'
+  )),
+  status text default 'Under Process' check (status in (
+    'Under Process','Submitted','Completed','Cancelled'
+  )),
+  assigned_to uuid references profiles(id),
+  agent_name text,
+  base_fee numeric(10,2) default 0,
+  gst_amount numeric(10,2) generated always as (base_fee * 0.18) stored,
+  total_amount numeric(10,2) generated always as (base_fee * 1.18) stored,
+  amount_paid numeric(10,2) default 0,
+  payment_method text default 'Cash' check (payment_method in ('Cash','UPI/Transfer')),
+  notes text,
+  created_by uuid references profiles(id),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────
+-- LEAD STATUS HISTORY TABLE
+-- ─────────────────────────────────────
+create table lead_status_history (
+  id uuid primary key default uuid_generate_v4(),
+  lead_id uuid references leads(id) on delete cascade,
+  status text not null,
+  note text,
+  changed_by uuid references profiles(id),
+  changed_by_name text,
+  created_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────
+-- LEAD NOTES TABLE
+-- ─────────────────────────────────────
+create table lead_notes (
+  id uuid primary key default uuid_generate_v4(),
+  lead_id uuid references leads(id) on delete cascade,
+  note text not null,
+  note_type text default 'note' check (note_type in ('note','whatsapp','payment','document','status')),
+  created_by uuid references profiles(id),
+  created_by_name text,
+  created_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────
+-- LEAD PAYMENTS TABLE
+-- ─────────────────────────────────────
+create table lead_payments (
+  id uuid primary key default uuid_generate_v4(),
+  lead_id uuid references leads(id) on delete cascade,
+  amount numeric(10,2) not null,
+  payment_method text not null check (payment_method in ('Cash','UPI/Transfer')),
+  note text,
+  received_by uuid references profiles(id),
+  received_by_name text,
+  created_at timestamptz default now()
+);
+
+-- Auto-update lead amount_paid when payment inserted
+create or replace function update_lead_paid()
+returns trigger as $$
+begin
+  update leads
+  set amount_paid = (
+    select coalesce(sum(amount), 0)
+    from lead_payments
+    where lead_id = new.lead_id
+  ),
+  updated_at = now()
+  where id = new.lead_id;
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger on_payment_inserted
+  after insert on lead_payments
+  for each row execute procedure update_lead_paid();
+
+-- ─────────────────────────────────────
+-- LEAD DOCUMENTS TABLE (Supabase Storage)
+-- ─────────────────────────────────────
+create table lead_documents (
+  id uuid primary key default uuid_generate_v4(),
+  lead_id uuid references leads(id) on delete cascade,
+  file_name text not null,
+  file_type text,
+  file_size integer,
+  storage_path text not null,
+  public_url text,
+  uploaded_by uuid references profiles(id),
+  uploaded_by_name text,
+  created_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────
+-- ACTIVITY LOG TABLE
+-- ─────────────────────────────────────
+create table activity_log (
+  id uuid primary key default uuid_generate_v4(),
+  action text not null,
+  entity_type text,
+  entity_id uuid,
+  performed_by uuid references profiles(id),
+  performed_by_name text,
+  metadata jsonb,
+  created_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────
+-- INDEXES FOR PERFORMANCE
+-- ─────────────────────────────────────
+create index idx_leads_assigned_to on leads(assigned_to);
+create index idx_leads_status on leads(status);
+create index idx_leads_source on leads(source);
+create index idx_leads_created_at on leads(created_at desc);
+create index idx_lead_notes_lead_id on lead_notes(lead_id);
+create index idx_lead_payments_lead_id on lead_payments(lead_id);
+create index idx_lead_documents_lead_id on lead_documents(lead_id);
+create index idx_activity_log_created_at on activity_log(created_at desc);
+
+-- ─────────────────────────────────────
+-- ROW LEVEL SECURITY (RLS)
+-- ─────────────────────────────────────
+alter table profiles enable row level security;
+alter table leads enable row level security;
+alter table lead_notes enable row level security;
+alter table lead_payments enable row level security;
+alter table lead_documents enable row level security;
+alter table lead_status_history enable row level security;
+alter table activity_log enable row level security;
+alter table services enable row level security;
+alter table roles enable row level security;
+
+-- Profiles: users can read all, update own
+create policy "profiles_select" on profiles for select using (true);
+create policy "profiles_update_own" on profiles for update using (auth.uid() = id);
+
+-- Services: everyone reads, only admin/manager writes
+create policy "services_select" on services for select using (true);
+create policy "services_insert" on services for insert with check (true);
+create policy "services_update" on services for update using (true);
+
+-- Leads: agents see own, managers/admins see all
+create policy "leads_select" on leads for select using (
+  auth.uid() = assigned_to
+  or exists (
+    select 1 from profiles
+    where id = auth.uid()
+    and role_name in ('Admin','Manager')
+  )
+);
+create policy "leads_insert" on leads for insert with check (true);
+create policy "leads_update" on leads for update using (
+  auth.uid() = assigned_to
+  or exists (select 1 from profiles where id = auth.uid() and role_name in ('Admin','Manager'))
+);
+create policy "leads_delete" on leads for delete using (
+  exists (select 1 from profiles where id = auth.uid() and role_name = 'Admin')
+);
+
+-- Notes, payments, documents, history: follow lead visibility
+create policy "notes_all" on lead_notes for all using (true);
+create policy "payments_all" on lead_payments for all using (true);
+create policy "docs_all" on lead_documents for all using (true);
+create policy "history_all" on lead_status_history for all using (true);
+create policy "activity_all" on activity_log for all using (true);
+create policy "roles_select" on roles for select using (true);
+create policy "roles_manage" on roles for all using (
+  exists (select 1 from profiles where id = auth.uid() and role_name = 'Admin')
+);
+
+-- ─────────────────────────────────────
+-- SUPABASE STORAGE BUCKET
+-- ─────────────────────────────────────
+-- Run in Supabase Storage settings:
+-- Create bucket named: lead-documents
+-- Set to: Private
+-- Max file size: 50MB
+-- Allowed MIME types: image/*, application/pdf, application/msword,
+--   application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+insert into storage.buckets (id, name, public) values ('lead-documents', 'lead-documents', false);
+
+create policy "storage_upload" on storage.objects for insert
+  with check (bucket_id = 'lead-documents' and auth.role() = 'authenticated');
+
+create policy "storage_read" on storage.objects for select
+  using (bucket_id = 'lead-documents' and auth.role() = 'authenticated');
+
+create policy "storage_delete" on storage.objects for delete
+  using (bucket_id = 'lead-documents' and auth.role() = 'authenticated');
+```
+
+---
+
+## FULL FOLDER STRUCTURE
+
+```
+visacrm/
+├── public/
+│   └── favicon.ico
+├── src/
+│   ├── main.jsx
+│   ├── App.jsx
+│   ├── lib/
+│   │   └── supabase.js              ← Supabase client init
+│   ├── context/
+│   │   ├── AuthContext.jsx          ← Auth state, current user, permissions
+│   │   └── AppContext.jsx           ← Global app state
+│   ├── hooks/
+│   │   ├── useLeads.js
+│   │   ├── useServices.js
+│   │   ├── useProfiles.js
+│   │   └── usePermissions.js
+│   ├── components/
+│   │   ├── layout/
+│   │   │   ├── Sidebar.jsx
+│   │   │   ├── Topbar.jsx
+│   │   │   └── Layout.jsx
+│   │   ├── ui/
+│   │   │   ├── Badge.jsx
+│   │   │   ├── Button.jsx
+│   │   │   ├── Modal.jsx
+│   │   │   ├── Toast.jsx
+│   │   │   ├── BarChart.jsx
+│   │   │   ├── StatCard.jsx
+│   │   │   ├── Avatar.jsx
+│   │   │   └── GSTBox.jsx
+│   │   ├── leads/
+│   │   │   ├── LeadForm.jsx         ← Add/Edit modal with 4 tabs
+│   │   │   ├── LeadTable.jsx
+│   │   │   ├── LeadFilters.jsx
+│   │   │   └── LeadRow.jsx
+│   │   ├── detail/
+│   │   │   ├── LeadDetail.jsx
+│   │   │   ├── DetailOverview.jsx
+│   │   │   ├── DetailHistory.jsx
+│   │   │   ├── DetailDocuments.jsx
+│   │   │   └── DetailPayment.jsx
+│   │   └── whatsapp/
+│   │       └── WAMessage.js         ← WhatsApp message builder
+│   ├── pages/
+│   │   ├── Login.jsx
+│   │   ├── CommandCenter.jsx        ← Admin-only full overview
+│   │   ├── Dashboard.jsx
+│   │   ├── Leads.jsx
+│   │   ├── LeadDetailPage.jsx
+│   │   ├── WalkIns.jsx
+│   │   ├── Payments.jsx
+│   │   ├── Services.jsx
+│   │   ├── Reports.jsx
+│   │   ├── Team.jsx
+│   │   ├── Roles.jsx
+│   │   └── ActivityLog.jsx
+│   └── utils/
+│       ├── gst.js                   ← GST calculation helpers
+│       ├── format.js                ← Number/date formatting
+│       └── whatsapp.js              ← WA URL builder
+├── .env
+├── index.html
+├── vite.config.js
+├── tailwind.config.js
+└── package.json
+```
+
+---
+
+## SUPABASE CLIENT (src/lib/supabase.js)
+
+```js
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  }
+})
+```
+
+---
+
+## AUTH CONTEXT (src/context/AuthContext.jsx)
+
+```jsx
+import { createContext, useContext, useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
+
+const AuthContext = createContext({})
+export const useAuth = () => useContext(AuthContext)
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [permissions, setPermissions] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) fetchProfile(session.user.id)
+      else setLoading(false)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (session?.user) await fetchProfile(session.user.id)
+        else { setUser(null); setProfile(null); setPermissions([]); setLoading(false) }
+      }
+    )
+    return () => subscription.unsubscribe()
+  }, [])
+
+  async function fetchProfile(userId) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*, role:roles(*)')
+      .eq('id', userId)
+      .single()
+    if (data) {
+      setProfile(data)
+      setPermissions(data.role?.permissions || [])
+      setUser({ id: userId, ...data })
+    }
+    setLoading(false)
+  }
+
+  const can = (permission) => permissions.includes(permission)
+
+  const signIn = async (email, password) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    return { error }
+  }
+
+  const signOut = async () => {
+    await supabase.auth.signOut()
+    setUser(null); setProfile(null); setPermissions([])
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, profile, permissions, can, signIn, signOut, loading }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+```
+
+---
+
+## GST UTILITIES (src/utils/gst.js)
+
+```js
+export const GST_RATE = 0.18
+
+export function calcGST(baseFee) {
+  const fee = parseFloat(baseFee) || 0
+  const gstAmount = Math.round(fee * GST_RATE)
+  const totalAmount = Math.round(fee * (1 + GST_RATE))
+  return { fee, gstAmount, totalAmount }
+}
+
+export function calcBalance(baseFee, amountPaid) {
+  const { totalAmount } = calcGST(baseFee)
+  return Math.max(0, totalAmount - (parseFloat(amountPaid) || 0))
+}
+
+export function formatINR(amount) {
+  const n = Math.round(amount || 0)
+  return '₹' + n.toLocaleString('en-IN')
+}
+
+export function formatINRShort(amount) {
+  const n = Math.round(amount || 0)
+  if (n >= 100000) return '₹' + (n / 100000).toFixed(1) + 'L'
+  if (n >= 1000) return '₹' + (n / 1000).toFixed(0) + 'k'
+  return formatINR(n)
+}
+```
+
+---
+
+## WHATSAPP MESSAGE BUILDER (src/utils/whatsapp.js)
+
+```js
+import { calcGST, formatINR } from './gst'
+
+export function buildWAUrl(lead, messageType = 'welcome') {
+  const rawNum = lead.whatsapp || lead.phone || ''
+  const num = rawNum.replace(/\D/g, '').replace(/^0/, '91')
+  if (!num || num.length < 10) return null
+
+  const { gstAmount, totalAmount } = calcGST(lead.base_fee)
+  const balance = totalAmount - (lead.amount_paid || 0)
+  const firstName = (lead.pax_name || '').split(' ')[0]
+
+  let message = ''
+
+  if (messageType === 'welcome') {
+    message = `Hi ${firstName} 👋\n\nThank you for choosing us! Your *${lead.service_name}* application is registered.\n\n📋 *Status:* ${lead.status}\n\n💰 *Fee Breakdown:*\nBase fee: ${formatINR(lead.base_fee)}\nGST (18%): ${formatINR(gstAmount)}\n*Total: ${formatINR(totalAmount)}*\n\n✅ *Paid:* ${formatINR(lead.amount_paid)}\n${balance > 0 ? `⏳ *Balance Due:* ${formatINR(balance)}\n` : ''}\nWe will keep you updated at every step! 🙏`
+  }
+
+  if (messageType === 'status_update') {
+    message = `Hi ${firstName} 👋\n\nYour *${lead.service_name}* application status has been updated!\n\n📋 *New Status:* ${lead.status}\n💰 *Total (incl. GST):* ${formatINR(totalAmount)}\n✅ *Paid:* ${formatINR(lead.amount_paid)}\n${balance > 0 ? `⏳ *Balance Due:* ${formatINR(balance)}\n` : ''}\nFor any queries, please contact us. Thank you! 🙏`
+  }
+
+  if (messageType === 'payment_received') {
+    message = `Hi ${firstName} 👋\n\nPayment received for your *${lead.service_name}* application.\n\n✅ *Amount Received:* ${formatINR(lead.amount_paid)}\n💰 *Total Payable:* ${formatINR(totalAmount)}\n${balance > 0 ? `⏳ *Balance Due:* ${formatINR(balance)}\n` : '🎉 *Your account is fully paid!*\n'}\nThank you! 🙏`
+  }
+
+  if (messageType === 'completed') {
+    message = `Hi ${firstName} 🎉\n\nGreat news! Your *${lead.service_name}* application is *Completed*!\n\nPlease visit our office to collect your documents.\n\nThank you for choosing us! 🙏`
+  }
+
+  return `https://wa.me/${num}?text=${encodeURIComponent(message)}`
+}
+
+export function openWhatsApp(lead, messageType = 'welcome') {
+  const url = buildWAUrl(lead, messageType)
+  if (url) window.open(url, '_blank')
+  return !!url
+}
+```
+
+---
+
+## LEADS HOOK (src/hooks/useLeads.js)
+
+```js
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
+
+export function useLeads(filters = {}) {
+  const { can, profile } = useAuth()
+  const [leads, setLeads] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const fetchLeads = async () => {
+    setLoading(true)
+    let query = supabase
+      .from('leads')
+      .select(`
+        *,
+        service:services(name, category, country),
+        agent:profiles!assigned_to(id, full_name, avatar_color),
+        notes:lead_notes(count),
+        documents:lead_documents(count),
+        payments:lead_payments(id, amount, payment_method, created_at)
+      `)
+      .order('created_at', { ascending: false })
+
+    if (!can('leads_view_all')) {
+      query = query.eq('assigned_to', profile?.id)
+    }
+    if (filters.status) query = query.eq('status', filters.status)
+    if (filters.service_name) query = query.eq('service_name', filters.service_name)
+    if (filters.agent) query = query.eq('assigned_to', filters.agent)
+    if (filters.source) query = query.eq('source', filters.source)
+    if (filters.search) {
+      query = query.or(`pax_name.ilike.%${filters.search}%,phone.ilike.%${filters.search}%,service_name.ilike.%${filters.search}%`)
+    }
+
+    const { data, error } = await query
+    if (error) setError(error)
+    else setLeads(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    if (profile) fetchLeads()
+  }, [profile, JSON.stringify(filters)])
+
+  // Realtime subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('leads_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+        fetchLeads()
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [])
+
+  const addLead = async (leadData) => {
+    const { data, error } = await supabase
+      .from('leads')
+      .insert([leadData])
+      .select()
+      .single()
+    if (!error && data) {
+      await supabase.from('lead_status_history').insert({
+        lead_id: data.id,
+        status: data.status,
+        note: 'Lead created',
+        changed_by: profile?.id,
+        changed_by_name: profile?.full_name
+      })
+      await logActivity('Lead created', 'lead', data.id, { pax_name: data.pax_name })
+      await fetchLeads()
+    }
+    return { data, error }
+  }
+
+  const updateLead = async (id, updates) => {
+    const existing = leads.find(l => l.id === id)
+    const { data, error } = await supabase
+      .from('leads')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    if (!error && data) {
+      if (existing?.status !== updates.status && updates.status) {
+        await supabase.from('lead_status_history').insert({
+          lead_id: id,
+          status: updates.status,
+          note: `Status changed from ${existing?.status} to ${updates.status}`,
+          changed_by: profile?.id,
+          changed_by_name: profile?.full_name
+        })
+      }
+      await fetchLeads()
+    }
+    return { data, error }
+  }
+
+  const deleteLead = async (id) => {
+    const { error } = await supabase.from('leads').delete().eq('id', id)
+    if (!error) await fetchLeads()
+    return { error }
+  }
+
+  const addNote = async (leadId, note, noteType = 'note') => {
+    return supabase.from('lead_notes').insert({
+      lead_id: leadId,
+      note,
+      note_type: noteType,
+      created_by: profile?.id,
+      created_by_name: profile?.full_name
+    })
+  }
+
+  const addPayment = async (leadId, amount, method, note = '') => {
+    const { data, error } = await supabase.from('lead_payments').insert({
+      lead_id: leadId,
+      amount,
+      payment_method: method,
+      note,
+      received_by: profile?.id,
+      received_by_name: profile?.full_name
+    })
+    if (!error) {
+      await addNote(leadId, `Payment received: ₹${amount} via ${method}`, 'payment')
+      await fetchLeads()
+    }
+    return { data, error }
+  }
+
+  const uploadDocument = async (leadId, file) => {
+    const path = `${leadId}/${Date.now()}_${file.name}`
+    const { data: storageData, error: uploadError } = await supabase.storage
+      .from('lead-documents')
+      .upload(path, file)
+    if (uploadError) return { error: uploadError }
+    const { data: { publicUrl } } = supabase.storage
+      .from('lead-documents')
+      .getPublicUrl(path)
+    const { data, error } = await supabase.from('lead_documents').insert({
+      lead_id: leadId,
+      file_name: file.name,
+      file_type: file.type,
+      file_size: file.size,
+      storage_path: path,
+      public_url: publicUrl,
+      uploaded_by: profile?.id,
+      uploaded_by_name: profile?.full_name
+    })
+    if (!error) await addNote(leadId, `Document uploaded: ${file.name}`, 'document')
+    return { data, error }
+  }
+
+  const logActivity = async (action, entityType, entityId, metadata = {}) => {
+    return supabase.from('activity_log').insert({
+      action,
+      entity_type: entityType,
+      entity_id: entityId,
+      performed_by: profile?.id,
+      performed_by_name: profile?.full_name,
+      metadata
+    })
+  }
+
+  return {
+    leads, loading, error,
+    addLead, updateLead, deleteLead,
+    addNote, addPayment, uploadDocument,
+    refetch: fetchLeads
+  }
+}
+```
+
+---
+
+## ALL PAGES TO BUILD
+
+### 1. Login Page (`/login`)
+- Email + password form using Supabase Auth
+- Quick login buttons for demo (Admin, Manager, Agent)
+- Show error on invalid credentials
+- Redirect to `/dashboard` on success
+
+### 2. Command Center (`/command-center`) — Admin only
+Requires `dash_mis` permission. Shows:
+- **6 stat cards**: Total Leads, Base Revenue, GST Collected (18%), Total Invoiced, Balance Pending, Completed %
+- **Pending payments table**: All leads with balance > 0, sorted by balance desc, with WhatsApp reminder button per row
+- **Status breakdown**: Bar chart (Under Process / Submitted / Completed)
+- **Agent performance table**: Agent name, total leads, completed, rate %, pending balance, docs uploaded
+- **GST Summary**: Total base revenue, total GST, total invoiced, cash vs UPI split
+- **All leads table**: Full table with all columns including GST, balance, with filter by status + agent
+
+### 3. Dashboard (`/dashboard`)
+Requires `dash_view`. Shows:
+- 4 stat cards: Total leads, Under Process, Completed, Revenue (if `dash_revenue` perm)
+- Recent leads table (5 rows) — click any row goes to lead detail
+- Leads by source — horizontal bar chart
+- Top services — horizontal bar chart
+- Agent performance table
+
+### 4. All Leads (`/leads`)
+- Filterable data table: filter by status, service, agent, source
+- Columns: Client name, Phone, WhatsApp, Service, Source, Status, Base Fee, GST, Total, Paid, Balance, Agent, Actions
+- Actions: View (opens detail), WhatsApp button, Edit, Delete
+- Click anywhere on row opens lead detail
+- Balance cells highlighted red if > 0
+- Add Lead button opens `LeadForm` modal
+
+### 5. Lead Detail (`/leads/:id`)
+- Back button returns to leads list
+- Top right: WhatsApp button, Edit button
+- **4 tabs:**
+  - **Overview**: Left column = all lead info card (service, status, fees, GST, total, paid, balance, source, agent). Right column = notes/timeline with add note input
+  - **Full History**: Chronological feed of every event — lead created, status changes, payments, notes, documents, WhatsApp messages sent — each with timestamp, by whom, and type icon
+  - **Documents**: Upload area (drag & drop + click), list of uploaded files with name, size, date, download link and delete button
+  - **Payment Detail**: GST breakdown box (base → GST → total → paid → balance), record new payment form (amount + method), full payment history list
+
+### 6. Walk-ins (`/walk-ins`)
+- Filter: only leads where source = 'Walk-in'
+- 3 stat cards: Today, This Week, This Month
+- Table: client, phone, service, date, status, paid/total, agent, actions
+
+### 7. Payments & GST (`/payments`)
+- 4 stat cards: Base Revenue, GST Collected, Total Invoiced, Balance Pending
+- 2 more cards: Cash Received, UPI/Transfer Received
+- Table: all leads with base fee, GST, total, paid, balance, method, date
+- Rows with pending balance highlighted in amber
+- Click row opens lead detail
+
+### 8. Services & Pricing (`/services`)
+- Country tab filter (All, UK, Ireland, Europe, UAE, etc.)
+- Service cards grid: each card shows service name, country, category, sub-services with price
+- Sub-services have base price displayed
+- Admin/Manager: Add Service button opens modal, Edit button on each card, Add sub-service link
+- Note: GST is automatically 18% on top of base price at invoice time (no separate GST field on services)
+
+### 9. MIS / Reports (`/reports`)
+- 4 stat cards: Conversion rate, Avg deal value, Pending submissions, Top service
+- Monthly revenue bar chart (last 6 months, total invoiced incl. GST)
+- Balance pending by agent table
+- CSV Export button: downloads all leads with base_fee, gst_amount, total_amount, amount_paid, balance columns
+
+### 10. Team Members (`/team`)
+- User cards grid: avatar, name, email, phone, role badge, status dot, action buttons
+- Actions: Change role (dropdown), Toggle active/inactive, Delete (non-Admin only)
+- Add User form at top: name, email, phone, role, sends Supabase Auth invite email
+
+### 11. Roles & Permissions (`/roles`)
+- Left: roles list — name badge, preset chip, permission count, delete for custom roles
+- Right: permission matrix — grouped by section (Dashboard, Leads, Payments, Services, Walk-ins, Users)
+- Toggle individual permissions on/off (Admin role locked)
+- Enable all / Disable all buttons
+- Save button writes updated permissions array to `roles` table
+- New Role button creates custom role with default Agent permissions
+
+### 12. Activity Log (`/activity-log`)
+- Chronological feed from `activity_log` table
+- Type icon per event (login, lead created, payment, WhatsApp, status change, role change, etc.)
+- Filterable by date range and type
+
+---
+
+## LEAD FORM MODAL — 4 TABS
+
+### Tab 1: Client Info
+- Pax Name (required)
+- Tel Number (required)
+- WhatsApp Number (separate field — can differ from phone)
+- Lead Source (dropdown: Walk-in, WhatsApp, Instagram, Facebook, Referral, Google, Online, Other)
+- Country / Destination (text)
+- Assign to Agent (dropdown from active profiles)
+
+### Tab 2: Service & Payment
+- Service (dropdown populated from `services` table)
+- When "Other Visa" or "Other Service" selected → extra text input appears for custom service name
+- Sub-service (dropdown based on selected service's sub_services array)
+- Status (Under Process / Submitted / Completed)
+- **Payment section:**
+  - Base Fee ₹ (number input)
+  - Amount Paid ₹ (number input)
+  - Payment Method (Cash / UPI/Transfer)
+- **Live GST preview box** appears as user types base fee:
+  - Base fee: ₹X
+  - GST (18%): ₹Y (auto-calculated)
+  - **Total payable: ₹Z** (bold, blue)
+  - Amount paid: ₹W
+  - Balance due: ₹V (red if > 0)
+
+### Tab 3: Documents
+- Drag-and-drop upload area
+- File input for click-to-upload
+- Preview list of staged files with name, size, type icon, remove button
+- Files uploaded to Supabase Storage `lead-documents` bucket on save
+
+### Tab 4: Notes
+- Textarea for initial notes
+- Notes saved to `lead_notes` table on lead creation
+
+### Form Actions (bottom):
+- **Cancel** button
+- **Save & WhatsApp** button — saves lead AND opens WhatsApp with welcome message
+- **Save Lead** button — saves lead only
+
+---
+
+## WHATSAPP INTEGRATION
+
+WhatsApp is **link-based** (no API required). All WA buttons open `https://wa.me/{number}?text={encoded_message}`.
+
+**When to send WhatsApp automatically:**
+1. **On new lead save**: Open WA with welcome message (fee breakdown, GST, total, paid, balance)
+2. **On status change**: Prompt to send status update message
+3. **On full payment received**: Auto-trigger WA with "account cleared" message
+4. **Manual button**: Available on every lead row, lead detail page, and Command Center pending payments table
+
+**Message types to build** (in `src/utils/whatsapp.js`):
+- `welcome` — initial registration with full fee breakdown
+- `status_update` — status changed notification
+- `payment_received` — payment recorded
+- `completed` — visa/service completed
+- `payment_reminder` — balance due reminder
+
+---
+
+## GST RULES
+
+- **All services** have 18% GST applied on top of base fee
+- GST is auto-calculated in the database via generated columns
+- In every payment view, show: Base Fee | GST (18%) | Total Payable | Paid | Balance
+- CSV export must include all 5 columns
+- Balance = Total (incl. GST) − Amount Paid
+- Rows with pending balance are highlighted amber/red in payment tables
+
+---
+
+## UI DESIGN GUIDELINES
+
+- **Font**: DM Sans (import from Google Fonts)
+- **Monospace numbers**: Use `font-family: 'DM Mono', monospace` for all currency values
+- **Color palette**:
+  - Primary blue: `#1A5FB4`
+  - Success green: `#2E7D32`
+  - Warning amber: `#E65100`
+  - Danger red: `#C62828`
+  - WhatsApp green: `#25D366`
+- **Status badges**:
+  - Under Process → amber bg/text
+  - Submitted → blue bg/text
+  - Completed → green bg/text
+- **Balance cells**: red text + bold if balance > 0, green if fully paid
+- Sidebar: 232px fixed width
+- Content area: scrollable, 22px padding
+- All tables: click row to open lead detail
+- Responsive: collapse sidebar on mobile
+
+---
+
+## REALTIME FEATURES
+
+Use Supabase Realtime to subscribe to the `leads` table:
+- When any lead is inserted or updated, refresh the current page's lead list
+- Show a subtle toast notification: "Lead updated by [agent name]"
+- This allows multiple agents to see live updates without refreshing
+
+---
+
+## PERMISSION GUARD
+
+Create a `PermissionGuard` component that:
+- Wraps any component or route
+- Checks `can(permission)` from AuthContext
+- Renders children if permitted
+- Shows "Access denied" or redirects if not permitted
+
+```jsx
+export function PermissionGuard({ permission, children, fallback = null }) {
+  const { can } = useAuth()
+  if (!can(permission)) return fallback
+  return children
+}
+```
+
+Use it to:
+- Hide nav items the user can't access
+- Disable/hide action buttons (add, edit, delete, manage pricing)
+- Block entire pages (redirect to `/dashboard` if no permission)
+- Hide financial columns in tables for agents without `pay_view`
+
+---
+
+## CSV EXPORT FORMAT
+
+When exporting leads, include these columns:
+```
+Pax Name, Phone, WhatsApp, Service, Sub-service, Destination,
+Source, Status, Agent, Base Fee (₹), GST 18% (₹), Total Payable (₹),
+Amount Paid (₹), Balance Due (₹), Payment Method, Lead Date
+```
+
+---
+
+## ERROR HANDLING
+
+- Wrap all Supabase calls in try/catch or check `{ data, error }`
+- Show toast notifications for:
+  - Success: "Lead added", "Payment recorded", "Status updated"
+  - Error: "Failed to save", "Upload failed", display Supabase error message
+- Handle offline state gracefully
+
+---
+
+## IMPORTANT NOTES FOR REPLIT
+
+1. Set environment variables in Replit Secrets (not in code):
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+
+2. In `vite.config.js`, ensure the dev server is accessible:
+```js
+export default {
+  server: {
+    host: '0.0.0.0',
+    port: 3000
+  }
+}
+```
+
+3. Add `.env` to `.gitignore`
+
+4. The app is a single-page app — configure Replit to serve `index.html` for all routes
+
+5. For Supabase Auth email invites (adding team members), configure the email template in Supabase Dashboard → Auth → Email Templates
+
+---
+
+## FIRST ADMIN USER SETUP
+
+After deploying, create the first admin user by:
+1. Going to Supabase Dashboard → Auth → Users → Add User
+2. Enter email and password
+3. In the SQL editor run:
+```sql
+update profiles
+set role_name = 'Admin',
+    full_name = 'Admin User',
+    role_id = (select id from roles where name = 'Admin')
+where id = (select id from auth.users where email = 'your-admin@email.com');
+```
+
+---
+
+## SUMMARY OF ALL FEATURES
+
+| Feature | Details |
+|---|---|
+| Authentication | Supabase Auth, email/password, session persistence |
+| Role-based access | Admin, Manager, Agent + custom roles with granular permissions |
+| Lead management | Add, edit, delete, filter, search, realtime updates |
+| WhatsApp | Link-based, 5 message types, auto-trigger on status change |
+| GST | Auto 18% on all services, shown in every payment view |
+| Documents | Upload to Supabase Storage, download, delete |
+| Full history | Every event chronologically — status changes, payments, notes, WA sent |
+| Payment tracking | Record partial payments, full payment history, balance auto-calc |
+| Command Center | Admin-only complete overview of all data, agents, pending balances |
+| MIS / Reports | Conversion rate, revenue trends, agent performance, CSV export |
+| Services admin | Add services with sub-services and base prices per country |
+| Activity log | Every action recorded with timestamp and user |
+| Realtime | Live lead updates across multiple browser sessions |

@@ -1,0 +1,189 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+
+export function useLeads(filters?: { status?: string, source?: string, agent?: string, search?: string }) {
+  return useQuery({
+    queryKey: ['leads', filters],
+    queryFn: async () => {
+      let query = supabase
+        .from('leads')
+        .select('*, service:services(name, category, country), agent:profiles!assigned_to(id, full_name, avatar_color)')
+        .order('created_at', { ascending: false });
+
+      if (filters?.status && filters.status !== 'All') query = query.eq('status', filters.status);
+      if (filters?.source && filters.source !== 'All') query = query.eq('source', filters.source);
+      if (filters?.agent && filters.agent !== 'All') query = query.eq('assigned_to', filters.agent);
+      if (filters?.search) {
+        query = query.or(`pax_name.ilike.%${filters.search}%,phone.ilike.%${filters.search}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return data;
+    }
+  });
+}
+
+export function useLead(id: string) {
+  return useQuery({
+    queryKey: ['leads', id],
+    queryFn: async () => {
+      if (!id) return null;
+      const { data, error } = await supabase
+        .from('leads')
+        .select('*, service:services(*), agent:profiles!assigned_to(*)')
+        .eq('id', id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id
+  });
+}
+
+export function useLeadNotes(id: string) {
+  return useQuery({
+    queryKey: ['lead_notes', id],
+    queryFn: async () => {
+      if (!id) return [];
+      const { data, error } = await supabase
+        .from('lead_notes')
+        .select('*')
+        .eq('lead_id', id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id
+  });
+}
+
+export function useLeadPayments(id: string) {
+  return useQuery({
+    queryKey: ['lead_payments', id],
+    queryFn: async () => {
+      if (!id) return [];
+      const { data, error } = await supabase
+        .from('lead_payments')
+        .select('*')
+        .eq('lead_id', id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id
+  });
+}
+
+export function useLeadDocuments(id: string) {
+  return useQuery({
+    queryKey: ['lead_documents', id],
+    queryFn: async () => {
+      if (!id) return [];
+      const { data, error } = await supabase
+        .from('lead_documents')
+        .select('*')
+        .eq('lead_id', id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id
+  });
+}
+
+export function useLeadHistory(id: string) {
+  return useQuery({
+    queryKey: ['lead_history', id],
+    queryFn: async () => {
+      if (!id) return [];
+      const { data, error } = await supabase
+        .from('lead_status_history')
+        .select('*')
+        .eq('lead_id', id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id
+  });
+}
+
+export function useCreateLead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (lead: any) => {
+      const { data, error } = await supabase.from('leads').insert([lead]).select().single();
+      if (error) throw error;
+      
+      // Also log creation in history
+      if (data) {
+        await supabase.from('lead_status_history').insert([{
+          lead_id: data.id,
+          status: data.status,
+          note: 'Lead created',
+        }]);
+      }
+      
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    }
+  });
+}
+
+export function useUpdateLead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, updates, logStatus }: { id: string, updates: any, logStatus?: boolean }) => {
+      const { data, error } = await supabase.from('leads').update(updates).eq('id', id).select().single();
+      if (error) throw error;
+
+      if (logStatus && updates.status) {
+        await supabase.from('lead_status_history').insert([{
+          lead_id: id,
+          status: updates.status,
+          note: 'Status updated manually'
+        }]);
+      }
+
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['leads', data.id] });
+    }
+  });
+}
+
+export function useCreateLeadNote() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (note: any) => {
+      const { data, error } = await supabase.from('lead_notes').insert([note]).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['lead_notes', data.lead_id] });
+    }
+  });
+}
+
+export function useCreateLeadPayment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payment: any) => {
+      const { data, error } = await supabase.from('lead_payments').insert([payment]).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['lead_payments', data.lead_id] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['leads', data.lead_id] });
+    }
+  });
+}

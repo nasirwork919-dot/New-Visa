@@ -1,0 +1,5 @@
+{
+  "buildCommand": "pnpm --filter @workspace/visa-crm run build && node /vercel/path0/vercel-build.js",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": null
+}

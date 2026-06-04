@@ -1,0 +1,1213 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: VisaCRM API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: leads
+    description: Lead management
+  - name: services
+    description: Service catalog
+  - name: profiles
+    description: User profiles
+  - name: roles
+    description: Roles and permissions
+  - name: dashboard
+    description: Dashboard and analytics
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /leads:
+    get:
+      operationId: listLeads
+      tags: [leads]
+      summary: List leads with optional filters
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: assigned_to
+          in: query
+          schema:
+            type: string
+        - name: service_name
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of leads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Lead"
+    post:
+      operationId: createLead
+      tags: [leads]
+      summary: Create a new lead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadInput"
+      responses:
+        "201":
+          description: Created lead
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+
+  /leads/{id}:
+    get:
+      operationId: getLead
+      tags: [leads]
+      summary: Get a lead by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lead details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadDetail"
+    patch:
+      operationId: updateLead
+      tags: [leads]
+      summary: Update a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadUpdate"
+      responses:
+        "200":
+          description: Updated lead
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+    delete:
+      operationId: deleteLead
+      tags: [leads]
+      summary: Delete a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /leads/{id}/notes:
+    get:
+      operationId: listLeadNotes
+      tags: [leads]
+      summary: Get notes for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeadNote"
+    post:
+      operationId: createLeadNote
+      tags: [leads]
+      summary: Add a note to a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadNoteInput"
+      responses:
+        "201":
+          description: Created note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadNote"
+
+  /leads/{id}/payments:
+    get:
+      operationId: listLeadPayments
+      tags: [leads]
+      summary: Get payments for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of payments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeadPayment"
+    post:
+      operationId: createLeadPayment
+      tags: [leads]
+      summary: Record a payment for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadPaymentInput"
+      responses:
+        "201":
+          description: Created payment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadPayment"
+
+  /leads/{id}/documents:
+    get:
+      operationId: listLeadDocuments
+      tags: [leads]
+      summary: Get documents for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeadDocument"
+
+  /leads/{id}/history:
+    get:
+      operationId: listLeadHistory
+      tags: [leads]
+      summary: Get status history for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Status history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeadStatusHistory"
+
+  /services:
+    get:
+      operationId: listServices
+      tags: [services]
+      summary: List all services
+      responses:
+        "200":
+          description: List of services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+    post:
+      operationId: createService
+      tags: [services]
+      summary: Create a service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceInput"
+      responses:
+        "201":
+          description: Created service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+
+  /services/{id}:
+    patch:
+      operationId: updateService
+      tags: [services]
+      summary: Update a service
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceUpdate"
+      responses:
+        "200":
+          description: Updated service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+    delete:
+      operationId: deleteService
+      tags: [services]
+      summary: Delete a service
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /profiles:
+    get:
+      operationId: listProfiles
+      tags: [profiles]
+      summary: List all user profiles
+      responses:
+        "200":
+          description: List of profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Profile"
+
+  /profiles/{id}:
+    patch:
+      operationId: updateProfile
+      tags: [profiles]
+      summary: Update a profile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+
+  /roles:
+    get:
+      operationId: listRoles
+      tags: [roles]
+      summary: List all roles
+      responses:
+        "200":
+          description: List of roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Role"
+    post:
+      operationId: createRole
+      tags: [roles]
+      summary: Create a new role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleInput"
+      responses:
+        "201":
+          description: Created role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+
+  /roles/{id}:
+    patch:
+      operationId: updateRole
+      tags: [roles]
+      summary: Update a role's permissions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleUpdate"
+      responses:
+        "200":
+          description: Updated role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+    delete:
+      operationId: deleteRole
+      tags: [roles]
+      summary: Delete a custom role
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard stats summary
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/agent-performance:
+    get:
+      operationId: getAgentPerformance
+      tags: [dashboard]
+      summary: Get agent performance metrics
+      responses:
+        "200":
+          description: Agent performance list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentPerformance"
+
+  /dashboard/revenue-trend:
+    get:
+      operationId: getRevenueTrend
+      tags: [dashboard]
+      summary: Get monthly revenue trend for last 6 months
+      responses:
+        "200":
+          description: Monthly revenue data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MonthlyRevenue"
+
+  /dashboard/pending-payments:
+    get:
+      operationId: getPendingPayments
+      tags: [dashboard]
+      summary: Get leads with pending balance
+      responses:
+        "200":
+          description: Pending payments list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PendingPayment"
+
+  /activity-log:
+    get:
+      operationId: listActivityLog
+      tags: [dashboard]
+      summary: Get activity log entries
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Activity log
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityLogEntry"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Lead:
+      type: object
+      properties:
+        id:
+          type: string
+        pax_name:
+          type: string
+        phone:
+          type: string
+        whatsapp:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        service_id:
+          type: ["string", "null"]
+        service_name:
+          type: string
+        sub_service:
+          type: ["string", "null"]
+        destination_country:
+          type: ["string", "null"]
+        source:
+          type: string
+        status:
+          type: string
+        assigned_to:
+          type: ["string", "null"]
+        agent_name:
+          type: ["string", "null"]
+        base_fee:
+          type: number
+        gst_amount:
+          type: number
+        total_amount:
+          type: number
+        amount_paid:
+          type: number
+        payment_method:
+          type: string
+        notes:
+          type: ["string", "null"]
+        created_by:
+          type: ["string", "null"]
+        created_at:
+          type: string
+        updated_at:
+          type: string
+      required:
+        - id
+        - pax_name
+        - phone
+        - service_name
+        - source
+        - status
+        - base_fee
+        - gst_amount
+        - total_amount
+        - amount_paid
+        - payment_method
+        - created_at
+        - updated_at
+
+    LeadDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        pax_name:
+          type: string
+        phone:
+          type: string
+        whatsapp:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        service_id:
+          type: ["string", "null"]
+        service_name:
+          type: string
+        sub_service:
+          type: ["string", "null"]
+        destination_country:
+          type: ["string", "null"]
+        source:
+          type: string
+        status:
+          type: string
+        assigned_to:
+          type: ["string", "null"]
+        agent_name:
+          type: ["string", "null"]
+        base_fee:
+          type: number
+        gst_amount:
+          type: number
+        total_amount:
+          type: number
+        amount_paid:
+          type: number
+        payment_method:
+          type: string
+        notes:
+          type: ["string", "null"]
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        lead_notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadNote"
+        lead_payments:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadPayment"
+        lead_documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadDocument"
+        lead_status_history:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadStatusHistory"
+      required:
+        - id
+        - pax_name
+        - phone
+        - service_name
+        - source
+        - status
+        - base_fee
+        - gst_amount
+        - total_amount
+        - amount_paid
+        - payment_method
+        - created_at
+        - updated_at
+        - lead_notes
+        - lead_payments
+        - lead_documents
+        - lead_status_history
+
+    LeadInput:
+      type: object
+      properties:
+        pax_name:
+          type: string
+        phone:
+          type: string
+        whatsapp:
+          type: string
+        email:
+          type: string
+        service_id:
+          type: string
+        service_name:
+          type: string
+        sub_service:
+          type: string
+        destination_country:
+          type: string
+        source:
+          type: string
+        status:
+          type: string
+        assigned_to:
+          type: string
+        agent_name:
+          type: string
+        base_fee:
+          type: number
+        amount_paid:
+          type: number
+        payment_method:
+          type: string
+        notes:
+          type: string
+      required:
+        - pax_name
+        - phone
+        - service_name
+        - source
+
+    LeadUpdate:
+      type: object
+      properties:
+        pax_name:
+          type: string
+        phone:
+          type: string
+        whatsapp:
+          type: string
+        email:
+          type: string
+        service_id:
+          type: string
+        service_name:
+          type: string
+        sub_service:
+          type: string
+        destination_country:
+          type: string
+        source:
+          type: string
+        status:
+          type: string
+        assigned_to:
+          type: string
+        agent_name:
+          type: string
+        base_fee:
+          type: number
+        amount_paid:
+          type: number
+        payment_method:
+          type: string
+        notes:
+          type: string
+
+    LeadNote:
+      type: object
+      properties:
+        id:
+          type: string
+        lead_id:
+          type: string
+        note:
+          type: string
+        note_type:
+          type: string
+        created_by:
+          type: ["string", "null"]
+        created_by_name:
+          type: ["string", "null"]
+        created_at:
+          type: string
+      required:
+        - id
+        - lead_id
+        - note
+        - note_type
+        - created_at
+
+    LeadNoteInput:
+      type: object
+      properties:
+        note:
+          type: string
+        note_type:
+          type: string
+      required:
+        - note
+
+    LeadPayment:
+      type: object
+      properties:
+        id:
+          type: string
+        lead_id:
+          type: string
+        amount:
+          type: number
+        payment_method:
+          type: string
+        note:
+          type: ["string", "null"]
+        received_by:
+          type: ["string", "null"]
+        received_by_name:
+          type: ["string", "null"]
+        created_at:
+          type: string
+      required:
+        - id
+        - lead_id
+        - amount
+        - payment_method
+        - created_at
+
+    LeadPaymentInput:
+      type: object
+      properties:
+        amount:
+          type: number
+        payment_method:
+          type: string
+        note:
+          type: string
+      required:
+        - amount
+        - payment_method
+
+    LeadDocument:
+      type: object
+      properties:
+        id:
+          type: string
+        lead_id:
+          type: string
+        file_name:
+          type: string
+        file_type:
+          type: ["string", "null"]
+        file_size:
+          type: ["integer", "null"]
+        storage_path:
+          type: string
+        public_url:
+          type: ["string", "null"]
+        uploaded_by:
+          type: ["string", "null"]
+        uploaded_by_name:
+          type: ["string", "null"]
+        created_at:
+          type: string
+      required:
+        - id
+        - lead_id
+        - file_name
+        - storage_path
+        - created_at
+
+    LeadStatusHistory:
+      type: object
+      properties:
+        id:
+          type: string
+        lead_id:
+          type: string
+        status:
+          type: string
+        note:
+          type: ["string", "null"]
+        changed_by:
+          type: ["string", "null"]
+        changed_by_name:
+          type: ["string", "null"]
+        created_at:
+          type: string
+      required:
+        - id
+        - lead_id
+        - status
+        - created_at
+
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        country:
+          type: string
+        base_price:
+          type: number
+        sub_services:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+      required:
+        - id
+        - name
+        - category
+        - country
+        - base_price
+        - sub_services
+        - is_active
+        - created_at
+
+    ServiceInput:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        country:
+          type: string
+        base_price:
+          type: number
+        sub_services:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - category
+        - country
+
+    ServiceUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        country:
+          type: string
+        base_price:
+          type: number
+        sub_services:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+
+    Profile:
+      type: object
+      properties:
+        id:
+          type: string
+        full_name:
+          type: string
+        phone:
+          type: ["string", "null"]
+        whatsapp:
+          type: ["string", "null"]
+        role_id:
+          type: ["string", "null"]
+        role_name:
+          type: string
+        status:
+          type: string
+        avatar_color:
+          type: string
+        created_at:
+          type: string
+      required:
+        - id
+        - full_name
+        - role_name
+        - status
+        - avatar_color
+        - created_at
+
+    ProfileUpdate:
+      type: object
+      properties:
+        full_name:
+          type: string
+        phone:
+          type: string
+        whatsapp:
+          type: string
+        role_id:
+          type: string
+        role_name:
+          type: string
+        status:
+          type: string
+        avatar_color:
+          type: string
+
+    Role:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        is_preset:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+      required:
+        - id
+        - name
+        - is_preset
+        - permissions
+        - created_at
+
+    RoleInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+
+    RoleUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+
+    DashboardSummary:
+      type: object
+      properties:
+        total_leads:
+          type: integer
+        under_process:
+          type: integer
+        submitted:
+          type: integer
+        completed:
+          type: integer
+        cancelled:
+          type: integer
+        base_revenue:
+          type: number
+        gst_collected:
+          type: number
+        total_invoiced:
+          type: number
+        balance_pending:
+          type: number
+        cash_received:
+          type: number
+        upi_received:
+          type: number
+        completion_rate:
+          type: number
+        walkin_today:
+          type: integer
+        walkin_week:
+          type: integer
+        walkin_month:
+          type: integer
+      required:
+        - total_leads
+        - under_process
+        - submitted
+        - completed
+        - cancelled
+        - base_revenue
+        - gst_collected
+        - total_invoiced
+        - balance_pending
+        - cash_received
+        - upi_received
+        - completion_rate
+        - walkin_today
+        - walkin_week
+        - walkin_month
+
+    AgentPerformance:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        agent_name:
+          type: string
+        total_leads:
+          type: integer
+        completed:
+          type: integer
+        completion_rate:
+          type: number
+        balance_pending:
+          type: number
+        docs_uploaded:
+          type: integer
+      required:
+        - agent_id
+        - agent_name
+        - total_leads
+        - completed
+        - completion_rate
+        - balance_pending
+        - docs_uploaded
+
+    MonthlyRevenue:
+      type: object
+      properties:
+        month:
+          type: string
+        base_revenue:
+          type: number
+        gst_amount:
+          type: number
+        total_invoiced:
+          type: number
+        leads_count:
+          type: integer
+      required:
+        - month
+        - base_revenue
+        - gst_amount
+        - total_invoiced
+        - leads_count
+
+    PendingPayment:
+      type: object
+      properties:
+        id:
+          type: string
+        pax_name:
+          type: string
+        phone:
+          type: string
+        whatsapp:
+          type: ["string", "null"]
+        service_name:
+          type: string
+        total_amount:
+          type: number
+        amount_paid:
+          type: number
+        balance:
+          type: number
+        agent_name:
+          type: ["string", "null"]
+        status:
+          type: string
+      required:
+        - id
+        - pax_name
+        - phone
+        - service_name
+        - total_amount
+        - amount_paid
+        - balance
+        - status
+
+    ActivityLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        entity_type:
+          type: ["string", "null"]
+        entity_id:
+          type: ["string", "null"]
+        performed_by:
+          type: ["string", "null"]
+        performed_by_name:
+          type: ["string", "null"]
+        metadata:
+          type: ["object", "null"]
+        created_at:
+          type: string
+      required:
+        - id
+        - action
+        - created_at

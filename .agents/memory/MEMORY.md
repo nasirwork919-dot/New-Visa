@@ -1,0 +1,1 @@
+- [Vercel monorepo deploy](vercel-monorepo-deploy.md) — Vercel builds this repo from artifacts/api-server (wrong dir); anchor scripts on __dirname + use Build Output API v3, not outputDirectory.
