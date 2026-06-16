@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git config *)",
       "Bash(git commit -m ' *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "PowerShell(icacls \"E:\\\\Visa-CRM-main\\\\artifacts\\\\visa-crm\\\\src\\\\utils\\\\gst.ts\" 2>&1)"
     ]
   }
 }

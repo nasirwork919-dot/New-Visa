@@ -11,6 +11,7 @@ export function buildWAUrl(lead: any, messageType: string) {
 
   const phone = lead.whatsapp || lead.phone;
   let cleanPhone = phone.replace(/\D/g, '');
+  if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.slice(1); // strip leading 0
   if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
 
   const settings = loadSettings();
@@ -51,6 +52,7 @@ export function buildWAUrl(lead: any, messageType: string) {
       // Route by current lead status
       switch (lead.status) {
         case 'Under Process': templateKey = 'under_process'; break;
+        case 'Follow-up':     templateKey = 'under_process'; break;
         case 'Submitted':     templateKey = 'submitted'; break;
         case 'Completed':     templateKey = 'completed'; break;
         case 'Cancelled':     templateKey = 'cancelled'; break;

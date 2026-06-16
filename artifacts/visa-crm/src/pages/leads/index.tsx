@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
-import { useLeads, useCreateLead, useUpdateLead } from '@/hooks/use-leads';
+import { useLeads, useCreateLead, useUpdateLead, useLeadDocuments } from '@/hooks/use-leads';
 import { useServices } from '@/hooks/use-services';
 import { useProfiles } from '@/hooks/use-team';
 import { useAuth } from '@/context/AuthContext';
@@ -37,6 +37,7 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
   const { settings } = useSettings();
   const { data: services } = useServices();
   const { data: agents } = useProfiles();
+  const { data: existingDocs } = useLeadDocuments(lead?.id || '');
   const createLead = useCreateLead();
   const updateLead = useUpdateLead();
   const { toast } = useToast();
@@ -45,12 +46,10 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
   const [tab, setTab] = useState('pax');
   const [uploading, setUploading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<{ file: File; name: string }[]>([]);
-  const [sameWhatsApp, setSameWhatsApp] = useState(false);
 
   const blankForm = () => ({
     pax_name: lead?.pax_name || '',
     phone: lead?.phone || '',
-    whatsapp: lead?.whatsapp || lead?.phone || '',
     email: lead?.email || '',
     address: lead?.address || '',
     passport_no: lead?.passport_no || '',
@@ -78,26 +77,16 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
   useEffect(() => {
     setTab('pax');
     setPendingFiles([]);
-    setSameWhatsApp(false);
     setForm(blankForm());
   }, [lead?.id, open]);
 
   const baseFee = Number(form.base_fee) || 0;
-  const isCash = form.payment_method === 'Cash';
+  const isUPI = form.payment_method === 'UPI/Transfer';
   const service = calcGST(baseFee, form.payment_method, settings.serviceGSTRate, settings.bankGSTRate);
   const grandTotal = service.totalAmount;
   const balance = Math.max(0, grandTotal - (Number(form.amount_paid) || 0));
 
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
-
-  const handlePhoneChange = (v: string) => {
-    setForm(f => ({ ...f, phone: v, whatsapp: sameWhatsApp ? v : f.whatsapp }));
-  };
-
-  const handleSameWhatsApp = (checked: boolean) => {
-    setSameWhatsApp(checked);
-    if (checked) set('whatsapp', form.phone);
-  };
 
   const handleServiceChange = (id: string) => {
     if (id === '__other__') {
@@ -163,6 +152,7 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
       const nullDate = (v: string) => v?.trim() || null;
       const payload = {
         ...form,
+        whatsapp: form.phone, // single phone field — keep DB column in sync
         service_id: form.service_id === '__other__' ? null : form.service_id || null,
         base_fee: baseFee,
         amount_paid: Number(form.amount_paid) || 0,
@@ -228,27 +218,12 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
                 <Label>Full Name</Label>
                 <Input value={form.pax_name} onChange={e => set('pax_name', e.target.value)} placeholder="Passenger name" />
               </div>
-              <div>
-                <Label>Phone</Label>
-                <Input value={form.phone} onChange={e => handlePhoneChange(e.target.value)} placeholder="+91 98765 43210" />
-                <label className="flex items-center gap-2 mt-1.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={sameWhatsApp}
-                    onChange={e => handleSameWhatsApp(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-primary"
-                  />
-                  <span className="text-xs text-muted-foreground">Same as WhatsApp</span>
-                </label>
-              </div>
-              <div>
-                <Label>WhatsApp</Label>
-                <Input
-                  value={form.whatsapp}
-                  onChange={e => set('whatsapp', e.target.value)}
-                  placeholder="WhatsApp number"
-                  disabled={sameWhatsApp}
-                />
+              <div className="col-span-2">
+                <Label>Mobile Number</Label>
+                <div className="flex">
+                  <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground select-none">+91</span>
+                  <Input className="rounded-l-none" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="98765 43210" />
+                </div>
               </div>
               <div className="col-span-2">
                 <Label>Service</Label>
@@ -378,26 +353,27 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
                     <span>Total fee (client pays)</span>
                     <span>{formatINR(baseFee)}</span>
                   </div>
-                  <div className="flex justify-between text-xs text-amber-700 pl-3">
-                    <span>↳ Service GST ({settings.serviceGSTRate}%)</span>
-                    <span>― {formatINR(service.serviceGST)}</span>
-                  </div>
-                  {!isCash && (
-                    <div className="flex justify-between text-xs text-blue-700 pl-3">
-                      <span>↳ Bank GST ({settings.bankGSTRate}%)</span>
-                      <span>― {formatINR(service.bankGST)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-xs pl-3 text-muted-foreground border-t pt-1.5 mt-1">
-                    <span>Total GST</span>
-                    <span>― {formatINR(service.totalGST)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs pl-3 font-medium text-green-700">
-                    <span>Your net income</span>
-                    <span>{formatINR(service.netFee)}</span>
-                  </div>
-                  {!isCash && (
-                    <p className="text-[10px] text-blue-600 pt-1">Bank GST applies because payment is not Cash.</p>
+                  {isUPI ? (
+                    <>
+                      <div className="flex justify-between text-xs text-amber-700 pl-3">
+                        <span>↳ Service GST ({settings.serviceGSTRate}%)</span>
+                        <span>― {formatINR(service.serviceGST)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-blue-700 pl-3">
+                        <span>↳ Bank GST ({settings.bankGSTRate}%)</span>
+                        <span>― {formatINR(service.bankGST)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs pl-3 text-muted-foreground border-t pt-1.5 mt-1">
+                        <span>Total GST</span>
+                        <span>― {formatINR(service.totalGST)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs pl-3 font-medium text-green-700">
+                        <span>Your net income</span>
+                        <span>{formatINR(service.netFee)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground pl-3">No GST — applies only for UPI/GPay payments.</p>
                   )}
                 </div>
               )}
@@ -428,6 +404,25 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
           {/* Documents Tab */}
           <TabsContent value="docs" className="space-y-4 mt-4">
             <div className="space-y-3">
+              {/* Existing saved documents (edit mode only) */}
+              {isEdit && existingDocs && existingDocs.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Saved Documents</p>
+                  {existingDocs.map((doc: any) => (
+                    <div key={doc.id} className="flex items-center gap-3 rounded-lg border px-3 py-2 bg-muted/30">
+                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{doc.name}</p>
+                        <p className="text-xs text-muted-foreground">{(doc.file_size / 1024).toFixed(1)} KB</p>
+                      </div>
+                      <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                        <Button variant="outline" size="sm" type="button">View</Button>
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <Label htmlFor="new-lead-doc-upload" className="cursor-pointer block">
                 <div className="border-2 border-dashed rounded-lg p-6 text-center hover:bg-muted/50 transition-colors">
                   <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
@@ -456,7 +451,7 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
                 </div>
               )}
 
-              {pendingFiles.length === 0 && (
+              {pendingFiles.length === 0 && (!isEdit || !existingDocs?.length) && (
                 <p className="text-center text-sm text-muted-foreground py-2">No documents attached yet.</p>
               )}
             </div>
@@ -534,21 +529,22 @@ export default function Leads() {
     <SidebarLayout>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Leads</h1>
-            <p className="text-muted-foreground">Manage and track client applications.</p>
-          </div>
-          <div className="flex gap-2">
+          {/* On mobile: button row first so it's immediately tappable at the top */}
+          <div className="flex gap-2 sm:order-last">
             {can('leads_export') && (
               <Button variant="outline" onClick={exportCSV} size="sm">
                 <Download className="h-4 w-4 mr-1" /> Export CSV
               </Button>
             )}
             {can('leads_create') && (
-              <Button onClick={() => { setEditLead(null); setModalOpen(true); }}>
+              <Button autoFocus onClick={() => { setEditLead(null); setModalOpen(true); }}>
                 <Plus className="h-4 w-4 mr-1" /> New Lead
               </Button>
             )}
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Leads</h1>
+            <p className="text-muted-foreground">Manage and track client applications.</p>
           </div>
         </div>
 

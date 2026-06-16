@@ -11,14 +11,13 @@ export interface GSTBreakdown {
   gstAmount: number; // alias for totalGST — kept for backward compat
 }
 
-const CASH_METHODS = ['Cash'];
+// GST applies only for UPI/GPay payments; Cash, Cheque, Bank Transfer, Other = no GST
+const GST_METHODS = ['UPI/Transfer'];
 
 /**
- * Dual-GST calculation — both GSTs extracted from what the client pays.
- * Cash: only Service GST applies.
- * Non-cash: Service GST + Bank GST, both pulled from the same total.
- *
- * serviceGSTRate and bankGSTRate are percentages (e.g. 18, 2).
+ * GST calculation — extracted from what the client pays.
+ * UPI/Transfer: Service GST + Bank GST, both pulled from the total.
+ * All other methods (Cash, Cheque, Bank Transfer, Other): no GST.
  */
 export function calcGST(
   fee: number,
@@ -27,23 +26,21 @@ export function calcGST(
   bankGSTRate = BANK_GST_RATE_DEFAULT,
 ): GSTBreakdown {
   const f = Math.round(parseFloat(String(fee)) || 0);
-  const isCash = !paymentMethod || CASH_METHODS.includes(paymentMethod);
+  const isUPI = !!paymentMethod && GST_METHODS.includes(paymentMethod);
 
-  if (isCash) {
-    const serviceGST = Math.round(f * serviceGSTRate / (100 + serviceGSTRate));
-    const totalGST = serviceGST;
+  if (!isUPI) {
     return {
       fee: f,
-      serviceGST,
+      serviceGST: 0,
       bankGST: 0,
-      totalGST,
-      netFee: f - totalGST,
+      totalGST: 0,
+      netFee: f,
       totalAmount: f,
-      gstAmount: totalGST,
+      gstAmount: 0,
     };
   }
 
-  // Non-cash: both GSTs from the same client total
+  // UPI/Transfer: both GSTs extracted from the same client total
   const totalRate = serviceGSTRate + bankGSTRate;
   const serviceGST = Math.round(f * serviceGSTRate / (100 + totalRate));
   const bankGST = Math.round(f * bankGSTRate / (100 + totalRate));

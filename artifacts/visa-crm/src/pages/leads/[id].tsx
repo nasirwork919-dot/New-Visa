@@ -16,9 +16,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { formatINR, calcGST } from '@/utils/gst';
 import { useSettings } from '@/hooks/use-settings';
-import { openWhatsApp } from '@/utils/whatsapp';
+import { buildWAUrl } from '@/utils/whatsapp';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, MessageCircle, Phone, Mail, Upload, FileText, Clock } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Phone, Mail, Upload, FileText, Clock, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const STATUSES = ['Under Process', 'Follow-up', 'Submitted', 'Completed', 'Cancelled'];
@@ -64,7 +64,7 @@ export default function LeadDetail() {
   if (isLoading) return <SidebarLayout><div className="flex items-center justify-center h-64">Loading...</div></SidebarLayout>;
   if (!lead) return <SidebarLayout><div className="p-8 text-muted-foreground">Lead not found.</div></SidebarLayout>;
 
-  const isCash = !lead.payment_method || lead.payment_method === 'Cash';
+  const isUPI = lead.payment_method === 'UPI/Transfer';
   const service = calcGST(lead.base_fee || 0, lead.payment_method, settings.serviceGSTRate, settings.bankGSTRate);
   const balance = Math.max(0, service.totalAmount - (lead.amount_paid || 0));
 
@@ -111,13 +111,20 @@ export default function LeadDetail() {
       await updateLead.mutateAsync({ id: id!, updates: { status: newStatus }, logStatus: true });
       const updatedLead = { ...lead, status: newStatus };
       setNewStatus('');
+      const phone = lead.phone || lead.whatsapp;
+      const waUrl = phone ? buildWAUrl(updatedLead, 'status_update') : null;
       toast({
-        title: `Status changed to ${newStatus}`,
-        description: (lead.whatsapp || lead.phone) ? 'Opening WhatsApp to notify customer…' : undefined,
+        title: `Status updated to ${newStatus}`,
+        description: waUrl && waUrl !== '#'
+          ? 'Tap the button to notify the customer on WhatsApp.'
+          : undefined,
+        action: waUrl && waUrl !== '#' ? (
+          <a href={waUrl} target="_blank" rel="noopener noreferrer"
+             className="inline-flex items-center gap-1 rounded-md border border-[#25D366] px-3 py-1.5 text-xs font-medium text-[#25D366] hover:bg-green-50 transition-colors">
+            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+          </a>
+        ) : undefined,
       });
-      if (lead.whatsapp || lead.phone) {
-        setTimeout(() => openWhatsApp(updatedLead, 'status_update'), 500);
-      }
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
@@ -169,12 +176,12 @@ export default function LeadDetail() {
             </div>
             <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground flex-wrap">
               {lead.phone && (
-                <a href={`tel:${lead.phone}`} className="flex items-center gap-1 hover:text-foreground">
-                  <Phone className="h-3.5 w-3.5" />{lead.phone}
+                <a href={`tel:+91${lead.phone.replace(/\D/g, '')}`} className="flex items-center gap-1 hover:text-foreground">
+                  <Phone className="h-3.5 w-3.5" />+91 {lead.phone}
                 </a>
               )}
-              {lead.whatsapp && (
-                <a href={whatsappLink(lead.whatsapp, lead.pax_name)} target="_blank" rel="noopener noreferrer"
+              {(lead.phone || lead.whatsapp) && (
+                <a href={whatsappLink(lead.phone || lead.whatsapp, lead.pax_name)} target="_blank" rel="noopener noreferrer"
                    className="flex items-center gap-1 text-[#25D366] hover:opacity-80">
                   <MessageCircle className="h-3.5 w-3.5" />WhatsApp
                 </a>
@@ -197,10 +204,10 @@ export default function LeadDetail() {
 
           <Card><CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground">
-              {isCash ? `Service GST (${settings.serviceGSTRate}%)` : `Total GST (${settings.serviceGSTRate + settings.bankGSTRate}%)`}
+              {isUPI ? `Total GST (${settings.serviceGSTRate + settings.bankGSTRate}%)` : 'GST'}
             </p>
-            <p className="text-lg font-bold font-mono text-amber-700">{formatINR(service.totalGST)}</p>
-            {!isCash && (
+            <p className="text-lg font-bold font-mono text-amber-700">{isUPI ? formatINR(service.totalGST) : '—'}</p>
+            {isUPI && (
               <p className="text-[10px] text-muted-foreground mt-0.5">
                 Svc {formatINR(service.serviceGST)} + Bank {formatINR(service.bankGST)}
               </p>
@@ -275,16 +282,23 @@ export default function LeadDetail() {
                       <span>Service Fee (client pays)</span>
                       <span className="font-mono">{formatINR(lead.base_fee || 0)}</span>
                     </div>
-                    <div className="flex justify-between text-xs text-amber-700 pl-4">
-                      <span>↳ Service GST ({settings.serviceGSTRate}%)</span>
-                      <span className="font-mono">― {formatINR(service.serviceGST)}</span>
-                    </div>
-                    {!isCash && (
+                    {isUPI ? (
+                    <>
+                      <div className="flex justify-between text-xs text-amber-700 pl-4">
+                        <span>↳ Service GST ({settings.serviceGSTRate}%)</span>
+                        <span className="font-mono">― {formatINR(service.serviceGST)}</span>
+                      </div>
                       <div className="flex justify-between text-xs text-blue-700 pl-4">
                         <span>↳ Bank GST ({settings.bankGSTRate}%)</span>
                         <span className="font-mono">― {formatINR(service.bankGST)}</span>
                       </div>
-                    )}
+                    </>
+                  ) : (
+                    <div className="flex justify-between text-xs text-muted-foreground pl-4">
+                      <span>GST</span>
+                      <span className="font-mono">— (not applicable)</span>
+                    </div>
+                  )}
                     <div className="flex justify-between text-xs pl-4 text-muted-foreground border-t pt-1.5">
                       <span>Total GST deducted</span>
                       <span className="font-mono">― {formatINR(service.totalGST)}</span>
@@ -365,9 +379,11 @@ export default function LeadDetail() {
                   <div>
                     <p className="text-xs text-muted-foreground">Total Fee</p>
                     <p className="font-bold font-mono">{formatINR(service.totalAmount)}</p>
-                    <p className="text-[10px] text-amber-700 mt-0.5">
-                      incl. GST {formatINR(service.gstAmount)}
-                    </p>
+                    {isUPI && (
+                      <p className="text-[10px] text-amber-700 mt-0.5">
+                        incl. GST {formatINR(service.gstAmount)}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Paid</p>

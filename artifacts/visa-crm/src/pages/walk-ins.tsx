@@ -37,7 +37,7 @@ export default function WalkIns() {
   const [dateTo, setDateTo] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({
-    pax_name: '', phone: '', whatsapp: '', service_id: '', service_name: '',
+    pax_name: '', phone: '', service_id: '', service_name: '',
     destination: '', base_fee: '', notes: '',
   });
 
@@ -83,6 +83,7 @@ export default function WalkIns() {
       const { gstAmount, totalAmount } = calcGST(Number(form.base_fee) || 0);
       await createLead.mutateAsync({
         ...form,
+        whatsapp: form.phone, // single phone field — keep DB column in sync
         source: 'Walk-in',
         status: 'Under Process',
         assigned_to: profile?.id,
@@ -94,7 +95,7 @@ export default function WalkIns() {
       });
       toast({ title: 'Walk-in registered successfully' });
       setModalOpen(false);
-      setForm({ pax_name: '', phone: '', whatsapp: '', service_id: '', service_name: '', destination: '', base_fee: '', notes: '' });
+      setForm({ pax_name: '', phone: '', service_id: '', service_name: '', destination: '', base_fee: '', notes: '' });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
@@ -162,8 +163,8 @@ export default function WalkIns() {
                     <TableCell><LeadStatusBadge status={lead.status} /></TableCell>
                     <TableCell className="text-right font-mono">{formatINR(lead.total_amount || 0)}</TableCell>
                     <TableCell>
-                      {lead.whatsapp && (
-                        <a href={whatsappLink(lead.whatsapp, lead.pax_name)} target="_blank" rel="noopener noreferrer">
+                      {(lead.phone || lead.whatsapp) && (
+                        <a href={whatsappLink(lead.phone || lead.whatsapp, lead.pax_name)} target="_blank" rel="noopener noreferrer">
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-[#25D366]">
                             <MessageCircle className="h-4 w-4" />
                           </Button>
@@ -268,14 +269,11 @@ export default function WalkIns() {
               <Label>Full Name *</Label>
               <Input value={form.pax_name} onChange={e => set('pax_name', e.target.value)} placeholder="Client name" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Phone *</Label>
-                <Input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+91..." />
-              </div>
-              <div>
-                <Label>WhatsApp</Label>
-                <Input value={form.whatsapp} onChange={e => set('whatsapp', e.target.value)} placeholder="Same as phone" />
+            <div>
+              <Label>Mobile Number *</Label>
+              <div className="flex">
+                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground select-none">+91</span>
+                <Input className="rounded-l-none" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="98765 43210" />
               </div>
             </div>
             <div>
