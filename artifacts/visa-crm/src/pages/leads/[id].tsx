@@ -176,8 +176,8 @@ export default function LeadDetail() {
             </div>
             <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground flex-wrap">
               {lead.phone && (
-                <a href={`tel:+91${lead.phone.replace(/\D/g, '')}`} className="flex items-center gap-1 hover:text-foreground">
-                  <Phone className="h-3.5 w-3.5" />+91 {lead.phone}
+                <a href={`tel:${lead.phone.replace(/\s/g, '')}`} className="flex items-center gap-1 hover:text-foreground">
+                  <Phone className="h-3.5 w-3.5" />{lead.phone}
                 </a>
               )}
               {(lead.phone || lead.whatsapp) && (

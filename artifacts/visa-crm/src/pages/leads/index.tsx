@@ -32,6 +32,13 @@ function whatsappLink(phone: string, name: string) {
   return `https://wa.me/${wa.length === 10 ? '91' + wa : wa}?text=${msg}`;
 }
 
+function parsePhone(raw: string) {
+  if (!raw) return { code: '+91', number: '' };
+  const match = raw.match(/^(\+\d{1,4})\s*(.*)/);
+  if (match) return { code: match[1], number: match[2] };
+  return { code: '+91', number: raw };
+}
+
 function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => void; lead?: any }) {
   const { profile, can } = useAuth();
   const { settings } = useSettings();
@@ -46,10 +53,13 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
   const [tab, setTab] = useState('pax');
   const [uploading, setUploading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<{ file: File; name: string }[]>([]);
+  const [countryCode, setCountryCode] = useState('+91');
 
-  const blankForm = () => ({
+  const blankForm = () => {
+    const parsed = parsePhone(lead?.phone || '');
+    return {
     pax_name: lead?.pax_name || '',
-    phone: lead?.phone || '',
+    phone: parsed.number,
     email: lead?.email || '',
     address: lead?.address || '',
     passport_no: lead?.passport_no || '',
@@ -70,13 +80,15 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
     base_fee: lead?.base_fee || '',
     amount_paid: lead?.amount_paid || '',
     payment_method: lead?.payment_method || 'Cash',
-  });
+  };};
 
   const [form, setForm] = useState(blankForm);
 
   useEffect(() => {
     setTab('pax');
     setPendingFiles([]);
+    const parsed = parsePhone(lead?.phone || '');
+    setCountryCode(parsed.code);
     setForm(blankForm());
   }, [lead?.id, open]);
 
@@ -150,9 +162,11 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
     try {
       setUploading(true);
       const nullDate = (v: string) => v?.trim() || null;
+      const fullPhone = `${countryCode}${form.phone}`;
       const payload = {
         ...form,
-        whatsapp: form.phone, // single phone field — keep DB column in sync
+        phone: fullPhone,
+        whatsapp: fullPhone, // single phone field — keep DB column in sync
         service_id: form.service_id === '__other__' ? null : form.service_id || null,
         base_fee: baseFee,
         amount_paid: Number(form.amount_paid) || 0,
@@ -221,9 +235,15 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
               <div className="col-span-2">
                 <Label>Mobile Number</Label>
                 <div className="flex">
-                  <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground select-none">+91</span>
-                  <Input className="rounded-l-none" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="98765 43210" />
+                  <Input
+                    className="w-[72px] rounded-r-none text-center px-2"
+                    value={countryCode}
+                    onChange={e => setCountryCode(e.target.value)}
+                    placeholder="+91"
+                  />
+                  <Input className="rounded-l-none flex-1" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="98765 43210" />
                 </div>
+                <p className="text-xs text-muted-foreground mt-1">Country code editable — default +91 (India)</p>
               </div>
               <div className="col-span-2">
                 <Label>Service</Label>

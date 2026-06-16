@@ -36,6 +36,7 @@ export default function WalkIns() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  const [countryCode, setCountryCode] = useState('+91');
   const [form, setForm] = useState({
     pax_name: '', phone: '', service_id: '', service_name: '',
     destination: '', base_fee: '', notes: '',
@@ -81,9 +82,11 @@ export default function WalkIns() {
     }
     try {
       const { gstAmount, totalAmount } = calcGST(Number(form.base_fee) || 0);
+      const fullPhone = `${countryCode}${form.phone}`;
       await createLead.mutateAsync({
         ...form,
-        whatsapp: form.phone, // single phone field — keep DB column in sync
+        phone: fullPhone,
+        whatsapp: fullPhone, // single phone field — keep DB column in sync
         source: 'Walk-in',
         status: 'Under Process',
         assigned_to: profile?.id,
@@ -95,6 +98,7 @@ export default function WalkIns() {
       });
       toast({ title: 'Walk-in registered successfully' });
       setModalOpen(false);
+      setCountryCode('+91');
       setForm({ pax_name: '', phone: '', service_id: '', service_name: '', destination: '', base_fee: '', notes: '' });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -272,9 +276,15 @@ export default function WalkIns() {
             <div>
               <Label>Mobile Number *</Label>
               <div className="flex">
-                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground select-none">+91</span>
-                <Input className="rounded-l-none" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="98765 43210" />
+                <Input
+                  className="w-[72px] rounded-r-none text-center px-2"
+                  value={countryCode}
+                  onChange={e => setCountryCode(e.target.value)}
+                  placeholder="+91"
+                />
+                <Input className="rounded-l-none flex-1" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="98765 43210" />
               </div>
+              <p className="text-xs text-muted-foreground mt-1">Country code editable — default +91 (India)</p>
             </div>
             <div>
               <Label>Service</Label>
