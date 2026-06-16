@@ -17,6 +17,8 @@ export interface CRMSettings {
   serviceGSTRate: number;
   bankGSTRate: number;
   messages: MessageTemplates;
+  logoUrl: string;
+  colorTheme: string;
 }
 
 const SETTINGS_KEY = 'visa-crm-settings';
@@ -38,12 +40,46 @@ export const DEFAULT_MESSAGES: MessageTemplates = {
     'Hello {name},\n\nThis is a gentle reminder regarding your pending balance for the *{service}* application.\n\nTotal Fee: {fee}\nAmount Paid: {paid}\n*Balance Due: {balance}*\n\nPlease arrange for the payment at your earliest convenience.',
 };
 
+export const COLOR_THEMES = [
+  { name: 'Blue',    primary: '213 82% 40%', hex: '#1A5FB4' },
+  { name: 'Indigo',  primary: '240 60% 50%', hex: '#4338CA' },
+  { name: 'Purple',  primary: '270 55% 45%', hex: '#7C3AED' },
+  { name: 'Teal',    primary: '175 55% 35%', hex: '#0F766E' },
+  { name: 'Green',   primary: '142 55% 35%', hex: '#16A34A' },
+  { name: 'Orange',  primary: '25 85% 45%',  hex: '#EA580C' },
+  { name: 'Red',     primary: '0 72% 45%',   hex: '#DC2626' },
+  { name: 'Pink',    primary: '330 70% 50%', hex: '#DB2777' },
+];
+
+export function applyTheme(themeName: string) {
+  const theme = COLOR_THEMES.find(t => t.name === themeName);
+  if (!theme) return;
+  const p = theme.primary;
+  const parts = p.split(' ');
+  const lightNum = parseInt(parts[2]);
+  const darkL = Math.min(75, lightNum + 12) + '%';
+  const darkP = `${parts[0]} ${parts[1]} ${darkL}`;
+
+  let styleEl = document.getElementById('crm-theme-vars') as HTMLStyleElement | null;
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'crm-theme-vars';
+    document.head.appendChild(styleEl);
+  }
+  styleEl.textContent = [
+    `:root { --primary: ${p}; --sidebar-primary: ${p}; --ring: ${p}; --sidebar-ring: ${p}; --chart-1: ${p}; }`,
+    `.dark { --primary: ${darkP}; --sidebar-primary: ${darkP}; --ring: ${darkP}; --sidebar-ring: ${darkP}; --chart-1: ${darkP}; }`,
+  ].join('\n');
+}
+
 export const SETTING_DEFAULTS: CRMSettings = {
   waNumber: '',
   businessName: 'VisaCRM',
   serviceGSTRate: SERVICE_GST_RATE_DEFAULT,
   bankGSTRate: BANK_GST_RATE_DEFAULT,
   messages: DEFAULT_MESSAGES,
+  logoUrl: '',
+  colorTheme: 'Blue',
 };
 
 export function loadSettings(): CRMSettings {
@@ -72,6 +108,7 @@ export function useSettings() {
     };
     setSettings(next);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+    window.dispatchEvent(new Event('crm-settings-changed'));
     return next;
   };
 

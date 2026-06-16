@@ -6,9 +6,10 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { useSettings, DEFAULT_MESSAGES, type MessageTemplates } from '@/hooks/use-settings';
+import { useSettings, DEFAULT_MESSAGES, COLOR_THEMES, applyTheme, type MessageTemplates } from '@/hooks/use-settings';
 import { useToast } from '@/hooks/use-toast';
-import { Settings, MessageCircle, Receipt, MessageSquare, RotateCcw } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Settings, MessageCircle, Receipt, MessageSquare, RotateCcw, ImageIcon, Upload, X, Palette, Check } from 'lucide-react';
 
 const TEMPLATE_VARS = ['{name}', '{service}', '{fee}', '{gst}', '{net}', '{paid}', '{balance}'];
 
@@ -33,6 +34,8 @@ export default function SettingsPage() {
     bankGSTRate: settings.bankGSTRate,
   });
   const [messages, setMessages] = useState<MessageTemplates>({ ...settings.messages });
+  const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
+  const [colorTheme, setColorTheme] = useState(settings.colorTheme || 'Blue');
 
   const setField = (k: keyof typeof form, v: string | number) =>
     setForm(f => ({ ...f, [k]: v }));
@@ -43,6 +46,24 @@ export default function SettingsPage() {
   const resetMsg = (key: keyof MessageTemplates) =>
     setMessages(m => ({ ...m, [key]: DEFAULT_MESSAGES[key] }));
 
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      toast({ title: 'Image too large', description: 'Please use an image under 1 MB.', variant: 'destructive' });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => setLogoUrl(ev.target?.result as string);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleThemeSelect = (name: string) => {
+    setColorTheme(name);
+    applyTheme(name);
+  };
+
   const handleSave = () => {
     saveSettings({
       waNumber: form.waNumber.trim(),
@@ -50,7 +71,10 @@ export default function SettingsPage() {
       serviceGSTRate: Number(form.serviceGSTRate) || 18,
       bankGSTRate: Number(form.bankGSTRate) || 18,
       messages,
+      logoUrl,
+      colorTheme,
     });
+    applyTheme(colorTheme);
     toast({ title: 'Settings saved', description: 'All preferences have been updated.' });
   };
 
@@ -66,10 +90,108 @@ export default function SettingsPage() {
             Settings
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Configure WhatsApp number, GST rates, and message templates.
+            Configure branding, appearance, WhatsApp number, GST rates, and message templates.
           </p>
         </div>
 
+        {/* Branding & Appearance row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Branding */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ImageIcon className="h-4 w-4 text-violet-600" />
+                Branding
+              </CardTitle>
+              <CardDescription>Company logo displayed in the sidebar header.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Company Logo</Label>
+                <div className="mt-2 flex items-center gap-4">
+                  {logoUrl ? (
+                    <img
+                      src={logoUrl}
+                      alt="Company logo"
+                      className="h-12 max-w-[140px] object-contain rounded border p-1.5 bg-muted/40"
+                    />
+                  ) : (
+                    <div className="h-12 w-12 rounded border bg-muted/40 flex items-center justify-center shrink-0">
+                      <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="logo-upload" className="cursor-pointer">
+                      <Button variant="outline" size="sm" asChild>
+                        <span>
+                          <Upload className="h-3.5 w-3.5 mr-1.5" />
+                          {logoUrl ? 'Change' : 'Upload Logo'}
+                        </span>
+                      </Button>
+                      <input
+                        id="logo-upload"
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleLogoUpload}
+                      />
+                    </label>
+                    {logoUrl && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                        onClick={() => setLogoUrl('')}
+                      >
+                        <X className="h-3 w-3 mr-1" /> Remove
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">PNG, SVG, or JPG. Max 1 MB. Logo replaces the sidebar icon.</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Appearance */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Palette className="h-4 w-4 text-indigo-600" />
+                Appearance
+              </CardTitle>
+              <CardDescription>Pick a color scheme for the entire CRM. Preview updates instantly.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Label className="mb-3 block">Color Theme</Label>
+              <div className="flex flex-wrap gap-3">
+                {COLOR_THEMES.map(t => (
+                  <button
+                    key={t.name}
+                    title={t.name}
+                    onClick={() => handleThemeSelect(t.name)}
+                    className={cn(
+                      'h-9 w-9 rounded-full border-2 transition-all flex items-center justify-center',
+                      colorTheme === t.name
+                        ? 'border-foreground scale-110 shadow-md'
+                        : 'border-transparent hover:scale-105 hover:border-muted-foreground/40'
+                    )}
+                    style={{ backgroundColor: t.hex }}
+                  >
+                    {colorTheme === t.name && (
+                      <Check className="h-4 w-4 text-white drop-shadow" />
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                Selected: <span className="font-medium">{colorTheme}</span>. Click Save to persist.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* WhatsApp / Business & GST row */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* WhatsApp / Business */}
           <Card>
