@@ -284,41 +284,45 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
                 <Label>Full Name</Label>
                 <Input value={form.pax_name} onChange={e => set('pax_name', e.target.value)} placeholder="Passenger name" />
               </div>
-              {/* Phone Number */}
-              <div className="col-span-2">
-                <Label>Mobile Number *</Label>
-                <div className="flex items-center gap-3">
-                  <div className="flex flex-1">
-                    <Input tabIndex={-1} className="w-[72px] rounded-r-none text-center px-2" value={countryCode}
-                      onChange={e => setCountryCode(e.target.value)} placeholder="+91" />
-                    <Input className="rounded-l-none flex-1" value={form.phone}
-                      onChange={e => set('phone', e.target.value)} onBlur={handlePhoneBlur}
-                      placeholder="98765 43210" />
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Checkbox id="sameWA" checked={sameWA}
-                      onCheckedChange={v => { setSameWA(!!v); if (v) setAltAsWA(false); }} />
-                    <label htmlFor="sameWA" className="text-xs text-muted-foreground cursor-pointer select-none">
-                      Same WhatsApp
-                    </label>
-                  </div>
+              {/* Phone (left) + WhatsApp (right) */}
+              <div>
+                <Label>Phone *</Label>
+                <div className="flex">
+                  <Input tabIndex={-1} className="w-[72px] rounded-r-none text-center px-2" value={countryCode}
+                    onChange={e => setCountryCode(e.target.value)} placeholder="+91" />
+                  <Input className="rounded-l-none flex-1" value={form.phone}
+                    onChange={e => set('phone', e.target.value)} onBlur={handlePhoneBlur}
+                    placeholder="98765 43210" />
+                </div>
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  <Checkbox id="sameWA" checked={sameWA}
+                    onCheckedChange={v => { setSameWA(!!v); if (v) setAltAsWA(false); }} />
+                  <label htmlFor="sameWA" className="text-xs text-muted-foreground cursor-pointer select-none">
+                    Same number for WhatsApp
+                  </label>
                 </div>
               </div>
 
-              {/* WhatsApp — only when not same as phone */}
-              {!sameWA && !altAsWA && (
-                <div className="col-span-2">
-                  <Label>WhatsApp</Label>
-                  <div className="flex">
-                    <Input tabIndex={-1} className="w-[72px] rounded-r-none text-center px-2"
-                      value={waCountryCode} onChange={e => setWaCountryCode(e.target.value)} placeholder="+91" />
-                    <Input className="rounded-l-none flex-1" value={form.whatsapp}
-                      onChange={e => set('whatsapp', e.target.value)} placeholder="WhatsApp number" />
-                  </div>
+              <div>
+                <Label>WhatsApp</Label>
+                <div className="flex">
+                  <Input tabIndex={-1} className="w-[72px] rounded-r-none text-center px-2"
+                    value={sameWA ? countryCode : altAsWA ? altCountryCode : waCountryCode}
+                    onChange={e => setWaCountryCode(e.target.value)}
+                    disabled={sameWA || altAsWA}
+                    placeholder="+91" />
+                  <Input className="rounded-l-none flex-1"
+                    value={sameWA ? form.phone : altAsWA ? form.alt_phone : form.whatsapp}
+                    onChange={e => set('whatsapp', e.target.value)}
+                    disabled={sameWA || altAsWA}
+                    placeholder="WhatsApp number" />
                 </div>
-              )}
+                {altAsWA && (
+                  <p className="text-xs text-muted-foreground mt-1.5">Auto-filled from alt phone</p>
+                )}
+              </div>
 
-              {/* Alt Phone */}
+              {/* Alt Phone (below phone, full width) */}
               {showAlt ? (
                 <div className="col-span-2">
                   <div className="flex items-center justify-between mb-1">
