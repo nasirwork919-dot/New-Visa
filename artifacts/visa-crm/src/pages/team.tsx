@@ -6,22 +6,27 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
-import { Pencil, Users, UserPlus, Loader2 } from 'lucide-react';
+import { Pencil, Users, UserPlus, Loader2, Trash2, Eye, EyeOff } from 'lucide-react';
 
 const AVATAR_COLORS = ['#1A5FB4', '#2E7D32', '#E65100', '#6A1B9A', '#00838F', '#AD1457'];
 
 function EditProfileModal({ open, onClose, member }: { open: boolean; onClose: () => void; member: any }) {
   const { data: roles } = useRoles();
   const updateProfile = useUpdateProfile();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [saving, setSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
     full_name: member?.full_name || '',
+    email: member?.email || '',
+    new_password: '',
     role_id: member?.role_id || '',
     phone: member?.phone || '',
     is_active: member?.is_active ?? true,
@@ -31,12 +36,47 @@ function EditProfileModal({ open, onClose, member }: { open: boolean; onClose: (
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
+    setSaving(true);
     try {
-      await updateProfile.mutateAsync({ id: member.id, updates: form });
-      toast({ title: 'Profile updated' });
+      // Update profile fields (name, role, phone, active, avatar)
+      const role = roles?.find(r => r.id === form.role_id);
+      await updateProfile.mutateAsync({
+        id: member.id,
+        updates: {
+          full_name: form.full_name,
+          role_id: form.role_id || null,
+          role_name: role?.name || member.role_name || '',
+          phone: form.phone,
+          is_active: form.is_active,
+          avatar_color: form.avatar_color,
+        },
+      });
+
+      // If email or password changed, call the admin API
+      const emailChanged = form.email.trim() && form.email.trim() !== member.email;
+      const passwordChanged = form.new_password.trim().length >= 6;
+
+      if (emailChanged || passwordChanged) {
+        const body: Record<string, string> = { id: member.id };
+        if (emailChanged) body.email = form.email.trim();
+        if (passwordChanged) body.password = form.new_password.trim();
+
+        const res = await fetch('/api/team-members', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update credentials');
+        queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      }
+
+      toast({ title: 'Team member updated' });
       onClose();
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -48,6 +88,32 @@ function EditProfileModal({ open, onClose, member }: { open: boolean; onClose: (
           <div>
             <Label>Full Name</Label>
             <Input value={form.full_name} onChange={e => set('full_name', e.target.value)} />
+          </div>
+          <div>
+            <Label>Email</Label>
+            <Input type="email" value={form.email} onChange={e => set('email', e.target.value)} />
+          </div>
+          <div>
+            <Label>New Password <span className="text-muted-foreground font-normal text-xs">(leave blank to keep current)</span></Label>
+            <div className="relative">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={form.new_password}
+                onChange={e => set('new_password', e.target.value)}
+                placeholder="Min 6 characters"
+                className="pr-9"
+              />
+              <button
+                type="button"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPassword(v => !v)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            {form.new_password && form.new_password.length < 6 && (
+              <p className="text-xs text-destructive mt-1">Min 6 characters required</p>
+            )}
           </div>
           <div>
             <Label>Role</Label>
@@ -66,7 +132,7 @@ function EditProfileModal({ open, onClose, member }: { open: boolean; onClose: (
             <Label className="mb-2 block">Avatar Color</Label>
             <div className="flex gap-2">
               {AVATAR_COLORS.map(c => (
-                <button key={c} className={`w-8 h-8 rounded-full border-2 ${form.avatar_color === c ? 'border-foreground' : 'border-transparent'}`}
+                <button key={c} className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${form.avatar_color === c ? 'border-foreground scale-110' : 'border-transparent'}`}
                   style={{ backgroundColor: c }} onClick={() => set('avatar_color', c)} />
               ))}
             </div>
@@ -78,7 +144,12 @@ function EditProfileModal({ open, onClose, member }: { open: boolean; onClose: (
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={updateProfile.isPending}>Save</Button>
+          <Button
+            onClick={handleSave}
+            disabled={saving || !!(form.new_password && form.new_password.length < 6)}
+          >
+            {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving…</> : 'Save'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -90,13 +161,9 @@ function AddMemberModal({ open, onClose }: { open: boolean; onClose: () => void 
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
-    full_name: '',
-    email: '',
-    password: '',
-    role_id: '',
-    role_name: '',
-    phone: '',
+    full_name: '', email: '', password: '', role_id: '', role_name: '', phone: '',
     avatar_color: AVATAR_COLORS[0],
   });
 
@@ -110,12 +177,10 @@ function AddMemberModal({ open, onClose }: { open: boolean; onClose: () => void 
 
   const handleCreate = async () => {
     if (!form.full_name || !form.email || !form.password) {
-      toast({ title: 'Required fields missing', description: 'Name, email and password are required.', variant: 'destructive' });
-      return;
+      toast({ title: 'Required fields missing', description: 'Name, email and password are required.', variant: 'destructive' }); return;
     }
     if (form.password.length < 6) {
-      toast({ title: 'Password too short', description: 'Password must be at least 6 characters.', variant: 'destructive' });
-      return;
+      toast({ title: 'Password too short', description: 'Min 6 characters.', variant: 'destructive' }); return;
     }
     setLoading(true);
     try {
@@ -151,7 +216,22 @@ function AddMemberModal({ open, onClose }: { open: boolean; onClose: () => void 
           </div>
           <div>
             <Label>Password *</Label>
-            <Input type="password" value={form.password} onChange={e => set('password', e.target.value)} placeholder="Min 6 characters" />
+            <div className="relative">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={form.password}
+                onChange={e => set('password', e.target.value)}
+                placeholder="Min 6 characters"
+                className="pr-9"
+              />
+              <button
+                type="button"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPassword(v => !v)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <div>
             <Label>Role</Label>
@@ -170,7 +250,7 @@ function AddMemberModal({ open, onClose }: { open: boolean; onClose: () => void 
             <Label className="mb-2 block">Avatar Color</Label>
             <div className="flex gap-2">
               {AVATAR_COLORS.map(c => (
-                <button key={c} className={`w-8 h-8 rounded-full border-2 ${form.avatar_color === c ? 'border-foreground' : 'border-transparent'}`}
+                <button key={c} className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${form.avatar_color === c ? 'border-foreground scale-110' : 'border-transparent'}`}
                   style={{ backgroundColor: c }} onClick={() => set('avatar_color', c)} />
               ))}
             </div>
@@ -187,10 +267,58 @@ function AddMemberModal({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
+function DeleteMemberDialog({ member, onClose }: { member: any; onClose: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [loading, setLoading] = useState(false);
+
+  const handleDelete = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/team-members', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: member.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete member');
+      toast({ title: `${member.full_name} has been removed` });
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      onClose();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!member} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-destructive">
+            <Trash2 className="h-5 w-5" /> Remove Team Member
+          </DialogTitle>
+          <DialogDescription>
+            Remove <strong>{member?.full_name}</strong> from the team? Their account will be deactivated and they will lose access to the CRM. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="destructive" onClick={handleDelete} disabled={loading}>
+            {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Removing…</> : 'Remove Member'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Team() {
   const { can } = useAuth();
   const { data: members, isLoading } = useProfiles();
   const [editMember, setEditMember] = useState<any>(null);
+  const [deleteMember, setDeleteMember] = useState<any>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState('');
 
@@ -257,10 +385,16 @@ export default function Team() {
                       <p className="text-xs text-muted-foreground truncate">{member.email}</p>
                     </div>
                     {can('users_manage') && (
-                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0"
-                        onClick={() => setEditMember(member)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-1 shrink-0">
+                        <Button variant="ghost" size="icon" className="h-8 w-8"
+                          onClick={() => setEditMember(member)} title="Edit">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setDeleteMember(member)} title="Remove">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </CardContent>
@@ -275,6 +409,12 @@ export default function Team() {
           open={!!editMember}
           onClose={() => setEditMember(null)}
           member={editMember}
+        />
+      )}
+      {deleteMember && (
+        <DeleteMemberDialog
+          member={deleteMember}
+          onClose={() => setDeleteMember(null)}
         />
       )}
       <AddMemberModal open={addOpen} onClose={() => setAddOpen(false)} />

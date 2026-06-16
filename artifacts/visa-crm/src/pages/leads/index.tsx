@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { formatINR, calcGST } from '@/utils/gst';
 import { useSettings } from '@/hooks/use-settings';
 import { Link } from 'wouter';
@@ -55,15 +56,21 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
   const [pendingFiles, setPendingFiles] = useState<{ file: File; name: string }[]>([]);
   const [countryCode, setCountryCode] = useState('+91');
   const [altCountryCode, setAltCountryCode] = useState('+91');
+  const [waCountryCode, setWaCountryCode] = useState('+91');
+  const [sameWA, setSameWA] = useState(true);       // phone == whatsapp
+  const [altAsWA, setAltAsWA] = useState(false);    // alt_phone == whatsapp
+  const [showAlt, setShowAlt] = useState(false);    // show alt phone field
   const [duplicateLeads, setDuplicateLeads] = useState<any[]>([]);
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
 
   const blankForm = () => {
     const parsed = parsePhone(lead?.phone || '');
     const parsedAlt = parsePhone(lead?.alt_phone || '');
+    const parsedWA = parsePhone(lead?.whatsapp || '');
     return {
     pax_name: lead?.pax_name || '',
     phone: parsed.number,
+    whatsapp: parsedWA.number,
     alt_phone: parsedAlt.number,
     email: lead?.email || '',
     address: lead?.address || '',
@@ -96,8 +103,16 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
     setShowDuplicateDialog(false);
     const parsed = parsePhone(lead?.phone || '');
     const parsedAlt = parsePhone(lead?.alt_phone || '');
+    const parsedWA = parsePhone(lead?.whatsapp || '');
     setCountryCode(parsed.code);
     setAltCountryCode(parsedAlt.code);
+    setWaCountryCode(parsedWA.code);
+    // Determine WhatsApp source for edit mode
+    const waIsSameAsPhone = !lead?.whatsapp || lead?.whatsapp === lead?.phone;
+    const waIsSameAsAlt = !!(lead?.alt_phone && lead?.whatsapp === lead?.alt_phone);
+    setSameWA(isEdit ? waIsSameAsPhone : true);
+    setAltAsWA(isEdit ? (waIsSameAsAlt && !waIsSameAsPhone) : false);
+    setShowAlt(isEdit ? !!lead?.alt_phone : false);
     setForm(blankForm());
   }, [lead?.id, open]);
 
@@ -187,11 +202,15 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
       setUploading(true);
       const nullDate = (v: string) => v?.trim() || null;
       const fullPhone = `${countryCode}${form.phone}`;
+      const fullAltPhone = form.alt_phone ? `${altCountryCode}${form.alt_phone}` : null;
+      const fullWA = sameWA ? fullPhone
+        : altAsWA && fullAltPhone ? fullAltPhone
+        : `${waCountryCode}${form.whatsapp}`;
       const payload = {
         ...form,
         phone: fullPhone,
-        whatsapp: fullPhone,
-        alt_phone: form.alt_phone ? `${altCountryCode}${form.alt_phone}` : null,
+        whatsapp: fullWA,
+        alt_phone: fullAltPhone,
         service_id: form.service_id === '__other__' ? null : form.service_id || null,
         base_fee: baseFee,
         amount_paid: Number(form.amount_paid) || 0,
@@ -258,37 +277,85 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
                 <Label>Full Name</Label>
                 <Input value={form.pax_name} onChange={e => set('pax_name', e.target.value)} placeholder="Passenger name" />
               </div>
+              {/* Phone Number */}
               <div className="col-span-2">
-                <Label>Mobile Number</Label>
+                <Label>Mobile Number *</Label>
+                <div className="flex">
+                  <Input className="w-[72px] rounded-r-none text-center px-2" value={countryCode}
+                    onChange={e => setCountryCode(e.target.value)} placeholder="+91" />
+                  <Input className="rounded-l-none flex-1" value={form.phone}
+                    onChange={e => set('phone', e.target.value)} onBlur={handlePhoneBlur}
+                    placeholder="98765 43210" />
+                </div>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <Checkbox id="sameWA" checked={sameWA}
+                    onCheckedChange={v => { setSameWA(!!v); if (v) setAltAsWA(false); }} />
+                  <label htmlFor="sameWA" className="text-xs text-muted-foreground cursor-pointer select-none">
+                    Same number for WhatsApp
+                  </label>
+                </div>
+              </div>
+
+              {/* WhatsApp */}
+              <div className="col-span-2">
+                <Label className="flex items-center gap-2">
+                  WhatsApp
+                  {(sameWA || altAsWA) && (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      (auto-filled from {sameWA ? 'phone' : 'alt phone'})
+                    </span>
+                  )}
+                </Label>
                 <div className="flex">
                   <Input
                     className="w-[72px] rounded-r-none text-center px-2"
-                    value={countryCode}
-                    onChange={e => setCountryCode(e.target.value)}
+                    value={sameWA ? countryCode : altAsWA ? altCountryCode : waCountryCode}
+                    onChange={e => setWaCountryCode(e.target.value)}
+                    disabled={sameWA || altAsWA}
                     placeholder="+91"
                   />
                   <Input
                     className="rounded-l-none flex-1"
-                    value={form.phone}
-                    onChange={e => set('phone', e.target.value)}
-                    onBlur={handlePhoneBlur}
-                    placeholder="98765 43210"
+                    value={sameWA ? form.phone : altAsWA ? form.alt_phone : form.whatsapp}
+                    onChange={e => set('whatsapp', e.target.value)}
+                    disabled={sameWA || altAsWA}
+                    placeholder="WhatsApp number"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Country code editable — default +91 (India)</p>
               </div>
-              <div className="col-span-2">
-                <Label>Alternate Phone <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <div className="flex">
-                  <Input
-                    className="w-[72px] rounded-r-none text-center px-2"
-                    value={altCountryCode}
-                    onChange={e => setAltCountryCode(e.target.value)}
-                    placeholder="+91"
-                  />
-                  <Input className="rounded-l-none flex-1" value={form.alt_phone} onChange={e => set('alt_phone', e.target.value)} placeholder="Second number" />
+
+              {/* Alt Phone or Add button */}
+              {showAlt ? (
+                <div className="col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <Label>Alt. Phone <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground"
+                      onClick={() => { setShowAlt(false); set('alt_phone', ''); setAltAsWA(false); }}>
+                      <X className="h-3 w-3 mr-1" /> Remove
+                    </Button>
+                  </div>
+                  <div className="flex">
+                    <Input className="w-[72px] rounded-r-none text-center px-2" value={altCountryCode}
+                      onChange={e => setAltCountryCode(e.target.value)} placeholder="+91" />
+                    <Input className="rounded-l-none flex-1" value={form.alt_phone}
+                      onChange={e => set('alt_phone', e.target.value)} placeholder="Second number" />
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <Checkbox id="altWA" checked={altAsWA}
+                      onCheckedChange={v => { setAltAsWA(!!v); if (v) setSameWA(false); }} />
+                    <label htmlFor="altWA" className="text-xs text-muted-foreground cursor-pointer select-none">
+                      Use this number for WhatsApp
+                    </label>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="col-span-2">
+                  <Button variant="ghost" size="sm" className="text-muted-foreground h-8 px-3"
+                    onClick={() => setShowAlt(true)}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Phone Number
+                  </Button>
+                </div>
+              )}
               <div className="col-span-2">
                 <Label>Service</Label>
                 <Select value={form.service_id} onValueChange={handleServiceChange}>
