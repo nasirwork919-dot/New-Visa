@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
-import { useLeads, useCreateLead, useUpdateLead, useLeadDocuments } from '@/hooks/use-leads';
+import { useLeads, useCreateLead, useUpdateLead, useLeadDocuments, useDeleteLead } from '@/hooks/use-leads';
 import { useServices } from '@/hooks/use-services';
 import { useProfiles } from '@/hooks/use-team';
 import { useAuth } from '@/context/AuthContext';
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatINR, calcGST } from '@/utils/gst';
 import { useSettings } from '@/hooks/use-settings';
 import { Link } from 'wouter';
-import { Plus, Search, Download, Phone, MessageCircle, Upload, FileText, X, SlidersHorizontal, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Download, Phone, MessageCircle, Upload, FileText, X, SlidersHorizontal, AlertTriangle, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { openWhatsApp } from '@/utils/whatsapp';
@@ -583,6 +583,9 @@ export default function Leads() {
   const [dateTo, setDateTo] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editLead, setEditLead] = useState<any>(null);
+  const [deletingLead, setDeletingLead] = useState<any>(null);
+  const deleteLead = useDeleteLead();
+  const { toast } = useToast();
 
   const { data: leads, isLoading } = useLeads({ status, source, search, agent: agent !== 'All' ? agent : undefined });
 
@@ -776,6 +779,16 @@ export default function Leads() {
                           {can('leads_edit') && (
                             <Button variant="ghost" size="sm" onClick={() => { setEditLead(lead); setModalOpen(true); }}>Edit</Button>
                           )}
+                          {can('leads_delete') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10 px-2"
+                              onClick={() => setDeletingLead(lead)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -792,6 +805,39 @@ export default function Leads() {
         onClose={() => { setModalOpen(false); setEditLead(null); }}
         lead={editLead}
       />
+
+      {/* Delete confirmation */}
+      <Dialog open={!!deletingLead} onOpenChange={open => { if (!open) setDeletingLead(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" /> Delete Lead
+            </DialogTitle>
+            <DialogDescription>
+              Permanently delete the lead for <strong>{deletingLead?.pax_name}</strong>?
+              All notes, payments, documents, and history will also be deleted. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeletingLead(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteLead.isPending}
+              onClick={async () => {
+                try {
+                  await deleteLead.mutateAsync({ id: deletingLead.id, pax_name: deletingLead.pax_name });
+                  toast({ title: `Lead "${deletingLead.pax_name}" deleted` });
+                  setDeletingLead(null);
+                } catch (e: any) {
+                  toast({ title: 'Delete failed', description: e.message, variant: 'destructive' });
+                }
+              }}
+            >
+              {deleteLead.isPending ? 'Deleting…' : 'Delete Lead'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarLayout>
   );
 }

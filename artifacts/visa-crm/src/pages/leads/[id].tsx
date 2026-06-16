@@ -3,7 +3,7 @@ import { useParams, Link } from 'wouter';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import {
   useLead, useLeadNotes, useLeadPayments, useLeadDocuments, useLeadHistory,
-  useCreateLeadNote, useCreateLeadPayment, useUpdateLead
+  useCreateLeadNote, useCreateLeadPayment, useUpdateLead, useDeleteLead,
 } from '@/hooks/use-leads';
 import { useAuth } from '@/context/AuthContext';
 import { LeadStatusBadge } from '@/components/ui/status-badge';
@@ -18,7 +18,8 @@ import { formatINR, calcGST } from '@/utils/gst';
 import { useSettings } from '@/hooks/use-settings';
 import { buildWAUrl } from '@/utils/whatsapp';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, MessageCircle, Phone, Mail, Upload, FileText, Clock, ExternalLink } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Phone, Mail, Upload, FileText, Clock, ExternalLink, Trash2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 
 const STATUSES = ['Under Process', 'Follow-up', 'Submitted', 'Completed', 'Cancelled'];
@@ -54,8 +55,10 @@ export default function LeadDetail() {
   const createNote = useCreateLeadNote();
   const createPayment = useCreateLeadPayment();
   const updateLead = useUpdateLead();
+  const deleteLead = useDeleteLead();
 
   const [noteText, setNoteText] = useState('');
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'Cash', note: '', payment_date: '' });
   const [uploading, setUploading] = useState(false);
   const [newStatus, setNewStatus] = useState('');
@@ -130,6 +133,15 @@ export default function LeadDetail() {
     }
   };
 
+  const handleDelete = async () => {
+    try {
+      await deleteLead.mutateAsync({ id: id!, pax_name: lead.pax_name });
+      window.location.href = '/leads';
+    } catch (e: any) {
+      toast({ title: 'Delete failed', description: e.message, variant: 'destructive' });
+    }
+  };
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -173,6 +185,16 @@ export default function LeadDetail() {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold">{lead.pax_name}</h1>
               <LeadStatusBadge status={lead.status} />
+              {can('leads_delete') && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => setShowDeleteDialog(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" /> Delete Lead
+                </Button>
+              )}
             </div>
             <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground flex-wrap">
               {lead.phone && (
@@ -514,6 +536,31 @@ export default function LeadDetail() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Delete confirmation */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" /> Delete Lead
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently delete the lead for <strong>{lead.pax_name}</strong> and all
+              associated notes, payments, documents, and history. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteLead.isPending}
+            >
+              {deleteLead.isPending ? 'Deleting…' : 'Delete Lead'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarLayout>
   );
 }
