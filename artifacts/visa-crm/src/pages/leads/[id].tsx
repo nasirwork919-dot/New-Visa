@@ -185,7 +185,7 @@ export default function LeadDetail() {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold">{lead.pax_name}</h1>
               <LeadStatusBadge status={lead.status} />
-              {can('leads_delete') && (
+              {can('roles_manage') && (
                 <Button
                   variant="ghost"
                   size="sm"

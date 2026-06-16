@@ -232,6 +232,32 @@ export function useDeleteLead() {
   });
 }
 
+export function useBulkDeleteLeads() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (leads: { id: string; pax_name: string }[]) => {
+      for (const { id, pax_name } of leads) {
+        await supabase.from('lead_notes').delete().eq('lead_id', id);
+        await supabase.from('lead_payments').delete().eq('lead_id', id);
+        await supabase.from('lead_documents').delete().eq('lead_id', id);
+        await supabase.from('lead_status_history').delete().eq('lead_id', id);
+        const { error } = await supabase.from('leads').delete().eq('id', id);
+        if (error) throw error;
+        logActivity({
+          action: 'delete_lead',
+          entity_type: 'lead',
+          entity_id: id,
+          description: `Lead deleted: ${pax_name}`,
+        });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
 export function useCreateLeadPayment() {
   const queryClient = useQueryClient();
   return useMutation({

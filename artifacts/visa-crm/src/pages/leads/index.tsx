@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
-import { useLeads, useCreateLead, useUpdateLead, useLeadDocuments, useDeleteLead } from '@/hooks/use-leads';
+import { useLeads, useCreateLead, useUpdateLead, useLeadDocuments, useDeleteLead, useBulkDeleteLeads } from '@/hooks/use-leads';
 import { useServices } from '@/hooks/use-services';
 import { useProfiles } from '@/hooks/use-team';
 import { useAuth } from '@/context/AuthContext';
@@ -651,7 +651,10 @@ export default function Leads() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editLead, setEditLead] = useState<any>(null);
   const [deletingLead, setDeletingLead] = useState<any>(null);
+  const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const deleteLead = useDeleteLead();
+  const bulkDelete = useBulkDeleteLeads();
   const { toast } = useToast();
 
   const { data: leads, isLoading } = useLeads({ status, source, search, agent: agent !== 'All' ? agent : undefined });
@@ -672,6 +675,9 @@ export default function Leads() {
 
   const hasActiveFilters = search || status !== 'All' || source !== 'All' || agent !== 'All' || serviceFilter !== 'All' || payStatus !== 'All' || dateFrom || dateTo;
   const clearFilters = () => { setSearch(''); setStatus('All'); setSource('All'); setAgent('All'); setServiceFilter('All'); setPayStatus('All'); setDateFrom(''); setDateTo(''); };
+
+  const allSelected = displayLeads.length > 0 && displayLeads.every(l => selectedLeads.has(l.id));
+  const someSelected = displayLeads.some(l => selectedLeads.has(l.id));
 
   const exportCSV = () => {
     if (!leads) return;
@@ -783,6 +789,22 @@ export default function Leads() {
           </CardContent>
         </Card>
 
+        {/* Bulk action bar */}
+        {selectedLeads.size > 0 && can('roles_manage') && (
+          <div className="flex items-center justify-between bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-2.5">
+            <span className="text-sm font-medium text-destructive">
+              {selectedLeads.size} lead{selectedLeads.size > 1 ? 's' : ''} selected
+            </span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setSelectedLeads(new Set())}>Clear</Button>
+              <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                Delete {selectedLeads.size} Lead{selectedLeads.size > 1 ? 's' : ''}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         {isLoading ? (
           <div className="text-center py-16 text-muted-foreground">Loading...</div>
@@ -791,6 +813,17 @@ export default function Leads() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {can('roles_manage') && (
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={(checked) => {
+                          if (checked) setSelectedLeads(new Set(displayLeads.map(l => l.id)));
+                          else setSelectedLeads(new Set());
+                        }}
+                      />
+                    </TableHead>
+                  )}
                   <TableHead>Client</TableHead>
                   <TableHead>Service</TableHead>
                   <TableHead>Status</TableHead>
@@ -802,13 +835,25 @@ export default function Leads() {
               </TableHeader>
               <TableBody>
                 {displayLeads.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No leads found.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={can('roles_manage') ? 8 : 7} className="text-center py-12 text-muted-foreground">No leads found.</TableCell></TableRow>
                 )}
                 {displayLeads.map(lead => {
                   const { totalAmount: grandTotal } = calcGST(lead.base_fee || 0, lead.payment_method || 'Cash');
                   const bal = Math.max(0, grandTotal - (lead.amount_paid || 0));
                   return (
-                    <TableRow key={lead.id}>
+                    <TableRow key={lead.id} data-selected={selectedLeads.has(lead.id) || undefined} className={selectedLeads.has(lead.id) ? 'bg-destructive/5' : undefined}>
+                      {can('roles_manage') && (
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedLeads.has(lead.id)}
+                            onCheckedChange={(checked) => {
+                              const next = new Set(selectedLeads);
+                              if (checked) next.add(lead.id); else next.delete(lead.id);
+                              setSelectedLeads(next);
+                            }}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>
                         <p className="font-medium">{lead.pax_name}</p>
                         <div className="flex items-center gap-2 mt-0.5">
@@ -846,7 +891,7 @@ export default function Leads() {
                           {can('leads_edit') && (
                             <Button variant="ghost" size="sm" onClick={() => { setEditLead(lead); setModalOpen(true); }}>Edit</Button>
                           )}
-                          {can('leads_delete') && (
+                          {can('roles_manage') && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -872,6 +917,42 @@ export default function Leads() {
         onClose={() => { setModalOpen(false); setEditLead(null); }}
         lead={editLead}
       />
+
+      {/* Bulk delete confirmation */}
+      <Dialog open={bulkDeleteOpen} onOpenChange={open => { if (!open) setBulkDeleteOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" /> Delete {selectedLeads.size} Lead{selectedLeads.size > 1 ? 's' : ''}
+            </DialogTitle>
+            <DialogDescription>
+              Permanently delete <strong>{selectedLeads.size}</strong> lead{selectedLeads.size > 1 ? 's' : ''} and all their notes, payments, documents, and history? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={bulkDelete.isPending}
+              onClick={async () => {
+                const toDelete = displayLeads
+                  .filter(l => selectedLeads.has(l.id))
+                  .map(l => ({ id: l.id, pax_name: l.pax_name }));
+                try {
+                  await bulkDelete.mutateAsync(toDelete);
+                  toast({ title: `${toDelete.length} lead${toDelete.length > 1 ? 's' : ''} deleted` });
+                  setSelectedLeads(new Set());
+                  setBulkDeleteOpen(false);
+                } catch (e: any) {
+                  toast({ title: 'Delete failed', description: e.message, variant: 'destructive' });
+                }
+              }}
+            >
+              {bulkDelete.isPending ? 'Deleting…' : `Delete ${selectedLeads.size} Lead${selectedLeads.size > 1 ? 's' : ''}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation */}
       <Dialog open={!!deletingLead} onOpenChange={open => { if (!open) setDeletingLead(null); }}>
