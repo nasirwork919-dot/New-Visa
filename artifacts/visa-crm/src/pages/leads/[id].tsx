@@ -60,6 +60,7 @@ export default function LeadDetail() {
   const [noteText, setNoteText] = useState('');
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'Cash', note: '', payment_date: '' });
+  const [paymentWA, setPaymentWA] = useState<{ url: string; amount: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [newStatus, setNewStatus] = useState('');
   const { settings } = useSettings();
@@ -111,16 +112,10 @@ export default function LeadDetail() {
         ? buildWAUrl(updatedLead, 'payment_received', { this_payment: formatINR(amount), date, time })
         : null;
 
-      toast({
-        title: `Payment of ${formatINR(amount)} recorded`,
-        description: waUrl && waUrl !== '#' ? 'Tap the button to send a receipt on WhatsApp.' : undefined,
-        action: waUrl && waUrl !== '#' ? (
-          <a href={waUrl} target="_blank" rel="noopener noreferrer"
-             className="inline-flex items-center gap-1 rounded-md border border-[#25D366] px-3 py-1.5 text-xs font-medium text-[#25D366] hover:bg-green-50 transition-colors">
-            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-          </a>
-        ) : undefined,
-      });
+      toast({ title: `Payment of ${formatINR(amount)} recorded` });
+      if (waUrl && waUrl !== '#') {
+        setPaymentWA({ url: waUrl, amount: formatINR(amount) });
+      }
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
@@ -448,7 +443,7 @@ export default function LeadDetail() {
                   <div>
                     <Label>Amount (₹)</Label>
                     <Input type="number" placeholder="0" value={payForm.amount}
-                      onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} />
+                      onChange={e => { setPayForm(f => ({ ...f, amount: e.target.value })); setPaymentWA(null); }} />
                   </div>
                   <div>
                     <Label>Method</Label>
@@ -471,10 +466,22 @@ export default function LeadDetail() {
                     <Input placeholder="e.g., advance, final payment..." value={payForm.note}
                       onChange={e => setPayForm(f => ({ ...f, note: e.target.value }))} />
                   </div>
-                  <div className="col-span-2">
+                  <div className="col-span-2 flex items-center gap-3 flex-wrap">
                     <Button onClick={handleAddPayment} disabled={createPayment.isPending || updateLead.isPending}>
-                      Record Payment
+                      {createPayment.isPending || updateLead.isPending ? 'Saving…' : 'Record Payment'}
                     </Button>
+                    {paymentWA && (
+                      <a
+                        href={paymentWA.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setPaymentWA(null)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-[#25D366] bg-[#25D366]/10 px-3 py-2 text-sm font-medium text-[#25D366] hover:bg-[#25D366]/20 transition-colors"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        Send Receipt on WhatsApp
+                      </a>
+                    )}
                   </div>
                 </CardContent>
               </Card>
