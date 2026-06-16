@@ -6,7 +6,7 @@ function applyTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? `{${key}}`);
 }
 
-export function buildWAUrl(lead: any, messageType: string) {
+export function buildWAUrl(lead: any, messageType: string, extraVars?: Record<string, string>) {
   if (!lead.whatsapp && !lead.phone) return '#';
 
   const phone = lead.whatsapp || lead.phone;
@@ -37,6 +37,7 @@ export function buildWAUrl(lead: any, messageType: string) {
     net: formatINR(netFee),
     paid: formatINR(lead.amount_paid || 0),
     balance: formatINR(balance),
+    ...extraVars,
   };
 
   const tpl = settings.messages;

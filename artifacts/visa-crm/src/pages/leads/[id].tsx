@@ -102,7 +102,25 @@ export default function LeadDetail() {
       });
       await updateLead.mutateAsync({ id: id!, updates: { amount_paid: newPaid } });
       setPayForm({ amount: '', method: 'Cash', note: '', payment_date: '' });
-      toast({ title: `Payment of ${formatINR(amount)} recorded` });
+
+      const now = new Date();
+      const date = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const time = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      const updatedLead = { ...lead, amount_paid: newPaid };
+      const waUrl = (lead.whatsapp || lead.phone)
+        ? buildWAUrl(updatedLead, 'payment_received', { this_payment: formatINR(amount), date, time })
+        : null;
+
+      toast({
+        title: `Payment of ${formatINR(amount)} recorded`,
+        description: waUrl && waUrl !== '#' ? 'Tap the button to send a receipt on WhatsApp.' : undefined,
+        action: waUrl && waUrl !== '#' ? (
+          <a href={waUrl} target="_blank" rel="noopener noreferrer"
+             className="inline-flex items-center gap-1 rounded-md border border-[#25D366] px-3 py-1.5 text-xs font-medium text-[#25D366] hover:bg-green-50 transition-colors">
+            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+          </a>
+        ) : undefined,
+      });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }

@@ -36,7 +36,7 @@ export const DEFAULT_MESSAGES: MessageTemplates = {
   cancelled:
     'Hello {name},\n\nRegarding your *{service}* application:\n\nYour application has been cancelled. Please contact us for further assistance.',
   payment_received:
-    'Hello {name},\n\nWe have received your payment.\n\nTotal Fee: {fee}\nGST: {gst}\nAmount Paid: {paid}\nBalance Due: {balance}\n\nThank you!',
+    'Hello {name},\n\nWe have received your payment of *{this_payment}* on {date} at {time}.\n\nService: *{service}*\nTotal Fee: {fee}\nTotal Paid: {paid}\nBalance Due: {balance}\n\nThank you! 🙏',
   payment_reminder:
     'Hello {name},\n\nThis is a gentle reminder regarding your pending balance for the *{service}* application.\n\nTotal Fee: {fee}\nAmount Paid: {paid}\n*Balance Due: {balance}*\n\nPlease arrange for the payment at your earliest convenience.',
 };
