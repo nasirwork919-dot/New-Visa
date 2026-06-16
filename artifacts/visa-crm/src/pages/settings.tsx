@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -6,10 +6,16 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { useSettings, DEFAULT_MESSAGES, COLOR_THEMES, applyTheme, type MessageTemplates } from '@/hooks/use-settings';
+import {
+  useSettings, DEFAULT_MESSAGES, FULL_THEMES, applyFullTheme,
+  type MessageTemplates,
+} from '@/hooks/use-settings';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { Settings, MessageCircle, Receipt, MessageSquare, RotateCcw, ImageIcon, Upload, X, Palette, Check } from 'lucide-react';
+import {
+  Settings, MessageCircle, Receipt, MessageSquare, RotateCcw,
+  ImageIcon, Upload, X, Palette, Check, Pipette,
+} from 'lucide-react';
 
 const TEMPLATE_VARS = ['{name}', '{service}', '{fee}', '{gst}', '{net}', '{paid}', '{balance}'];
 
@@ -23,9 +29,74 @@ const MESSAGE_CONFIGS: { key: keyof MessageTemplates; label: string; when: strin
   { key: 'payment_reminder', label: 'Payment Reminder', when: 'Sent as a balance reminder' },
 ];
 
+function ThemeCard({
+  theme,
+  selected,
+  onSelect,
+}: {
+  theme: typeof FULL_THEMES[0];
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      title={theme.label}
+      className={cn(
+        'group relative rounded-xl border-2 overflow-hidden transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        selected
+          ? 'border-primary shadow-md scale-[1.03]'
+          : 'border-transparent hover:border-muted-foreground/30 hover:scale-[1.02]',
+      )}
+    >
+      {/* Mini layout preview */}
+      <div className="flex h-[62px] w-[104px]" style={{ backgroundColor: theme.preview.bg }}>
+        {/* Sidebar strip */}
+        <div className="w-[22px] h-full flex flex-col gap-[3px] p-[4px]" style={{ backgroundColor: theme.preview.sidebar }}>
+          <div className="h-[3px] rounded-full opacity-40" style={{ backgroundColor: theme.preview.primary }} />
+          <div className="h-[3px] rounded-full w-3/4 opacity-20" style={{ backgroundColor: theme.preview.primary }} />
+          <div className="h-[3px] rounded-full w-2/3 opacity-20" style={{ backgroundColor: theme.preview.primary }} />
+          <div className="h-[3px] rounded-full w-3/4 opacity-20" style={{ backgroundColor: theme.preview.primary }} />
+          <div className="h-[3px] rounded-full w-2/3 opacity-20" style={{ backgroundColor: theme.preview.primary }} />
+        </div>
+        {/* Content area */}
+        <div className="flex-1 p-[5px] flex flex-col gap-[4px]">
+          <div className="h-[4px] rounded-full w-10 opacity-30" style={{ backgroundColor: theme.dark ? '#ffffff' : '#000000' }} />
+          <div className="h-[3px] rounded-full w-8 opacity-15" style={{ backgroundColor: theme.dark ? '#ffffff' : '#000000' }} />
+          <div className="flex gap-[3px] mt-[2px]">
+            <div className="h-[12px] rounded-[3px] w-[18px] flex items-center justify-center" style={{ backgroundColor: theme.preview.primary }}>
+              <div className="h-[2px] w-[8px] rounded-full bg-white opacity-90" />
+            </div>
+            <div className="h-[12px] rounded-[3px] w-[14px]" style={{ backgroundColor: theme.dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)' }} />
+          </div>
+          <div className="mt-[2px] h-[10px] rounded-[3px] w-full" style={{ backgroundColor: theme.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }} />
+          <div className="h-[10px] rounded-[3px] w-full" style={{ backgroundColor: theme.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }} />
+        </div>
+      </div>
+      {/* Label */}
+      <div
+        className="px-1.5 py-1 text-[11px] font-medium text-center leading-tight"
+        style={{ backgroundColor: theme.preview.bg, color: theme.dark ? '#c8d4e8' : '#374151' }}
+      >
+        {theme.label}
+      </div>
+      {/* Selected checkmark */}
+      {selected && (
+        <div
+          className="absolute top-1.5 right-1.5 h-4 w-4 rounded-full flex items-center justify-center shadow"
+          style={{ backgroundColor: theme.preview.primary }}
+        >
+          <Check className="h-2.5 w-2.5 text-white" />
+        </div>
+      )}
+    </button>
+  );
+}
+
 export default function SettingsPage() {
   const { settings, saveSettings } = useSettings();
   const { toast } = useToast();
+  const colorInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
     waNumber: settings.waNumber,
@@ -35,7 +106,8 @@ export default function SettingsPage() {
   });
   const [messages, setMessages] = useState<MessageTemplates>({ ...settings.messages });
   const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
-  const [colorTheme, setColorTheme] = useState(settings.colorTheme || 'Blue');
+  const [colorTheme, setColorTheme] = useState(settings.colorTheme || 'sky-blue');
+  const [customColor, setCustomColor] = useState(settings.customColor || '#1A5FB4');
 
   const setField = (k: keyof typeof form, v: string | number) =>
     setForm(f => ({ ...f, [k]: v }));
@@ -59,9 +131,15 @@ export default function SettingsPage() {
     e.target.value = '';
   };
 
-  const handleThemeSelect = (name: string) => {
+  const handlePresetSelect = (name: string) => {
     setColorTheme(name);
-    applyTheme(name);
+    applyFullTheme(name);
+  };
+
+  const handleCustomColorChange = (hex: string) => {
+    setCustomColor(hex);
+    setColorTheme('custom');
+    applyFullTheme('custom', hex);
   };
 
   const handleSave = () => {
@@ -73,13 +151,17 @@ export default function SettingsPage() {
       messages,
       logoUrl,
       colorTheme,
+      customColor,
     });
-    applyTheme(colorTheme);
+    applyFullTheme(colorTheme, customColor);
     toast({ title: 'Settings saved', description: 'All preferences have been updated.' });
   };
 
   const sR = Number(form.serviceGSTRate || 18);
   const bR = Number(form.bankGSTRate || 18);
+
+  const lightThemes = FULL_THEMES.filter(t => !t.dark);
+  const darkThemes = FULL_THEMES.filter(t => t.dark);
 
   return (
     <SidebarLayout>
@@ -94,7 +176,7 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        {/* Branding & Appearance row */}
+        {/* Branding & Appearance */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Branding */}
           <Card>
@@ -103,7 +185,7 @@ export default function SettingsPage() {
                 <ImageIcon className="h-4 w-4 text-violet-600" />
                 Branding
               </CardTitle>
-              <CardDescription>Company logo displayed in the sidebar header.</CardDescription>
+              <CardDescription>Company logo shown in the sidebar header.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -148,51 +230,11 @@ export default function SettingsPage() {
                     )}
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">PNG, SVG, or JPG. Max 1 MB. Logo replaces the sidebar icon.</p>
+                <p className="text-xs text-muted-foreground mt-2">PNG, SVG, or JPG. Max 1 MB.</p>
               </div>
             </CardContent>
           </Card>
 
-          {/* Appearance */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Palette className="h-4 w-4 text-indigo-600" />
-                Appearance
-              </CardTitle>
-              <CardDescription>Pick a color scheme for the entire CRM. Preview updates instantly.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Label className="mb-3 block">Color Theme</Label>
-              <div className="flex flex-wrap gap-3">
-                {COLOR_THEMES.map(t => (
-                  <button
-                    key={t.name}
-                    title={t.name}
-                    onClick={() => handleThemeSelect(t.name)}
-                    className={cn(
-                      'h-9 w-9 rounded-full border-2 transition-all flex items-center justify-center',
-                      colorTheme === t.name
-                        ? 'border-foreground scale-110 shadow-md'
-                        : 'border-transparent hover:scale-105 hover:border-muted-foreground/40'
-                    )}
-                    style={{ backgroundColor: t.hex }}
-                  >
-                    {colorTheme === t.name && (
-                      <Check className="h-4 w-4 text-white drop-shadow" />
-                    )}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                Selected: <span className="font-medium">{colorTheme}</span>. Click Save to persist.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* WhatsApp / Business & GST row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* WhatsApp / Business */}
           <Card>
             <CardHeader>
@@ -224,19 +266,132 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </div>
 
-          {/* GST Rates */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Receipt className="h-4 w-4 text-amber-600" />
-                GST Rates
-              </CardTitle>
-              <CardDescription>
-                Both GSTs extracted from the client's total. Bank GST applies only for non-cash payments.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+        {/* Appearance — full width */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Palette className="h-4 w-4 text-indigo-600" />
+              Appearance
+            </CardTitle>
+            <CardDescription>
+              Choose a complete color scheme — backgrounds, sidebar, buttons, text, cards. Preview updates instantly.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+
+            {/* Light themes */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Light Themes</p>
+              <div className="flex flex-wrap gap-3">
+                {lightThemes.map(theme => (
+                  <ThemeCard
+                    key={theme.name}
+                    theme={theme}
+                    selected={colorTheme === theme.name}
+                    onSelect={() => handlePresetSelect(theme.name)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Dark themes */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Dark Themes</p>
+              <div className="flex flex-wrap gap-3">
+                {darkThemes.map(theme => (
+                  <ThemeCard
+                    key={theme.name}
+                    theme={theme}
+                    selected={colorTheme === theme.name}
+                    onSelect={() => handlePresetSelect(theme.name)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Custom color picker */}
+            <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold flex items-center gap-1.5">
+                    <Pipette className="h-3.5 w-3.5" />
+                    Custom Color
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Pick any color — generates a full light theme from it.
+                  </p>
+                </div>
+                {colorTheme === 'custom' && (
+                  <Badge variant="secondary" className="text-xs">Active</Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Styled color swatch that opens native color picker */}
+                <div
+                  className={cn(
+                    'h-10 w-10 rounded-lg border-2 cursor-pointer shadow-sm transition-transform hover:scale-105',
+                    colorTheme === 'custom' ? 'border-primary ring-2 ring-primary/30' : 'border-muted-foreground/30',
+                  )}
+                  style={{ backgroundColor: customColor }}
+                  onClick={() => colorInputRef.current?.click()}
+                  title="Click to open color picker"
+                />
+                <input
+                  ref={colorInputRef}
+                  type="color"
+                  value={customColor}
+                  onChange={e => handleCustomColorChange(e.target.value)}
+                  className="sr-only"
+                />
+                <div className="flex-1">
+                  <Input
+                    value={customColor}
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (/^#[0-9a-fA-F]{0,6}$/.test(v)) {
+                        setCustomColor(v);
+                        if (v.length === 7) handleCustomColorChange(v);
+                      }
+                    }}
+                    placeholder="#1A5FB4"
+                    className="font-mono text-sm h-10 w-32"
+                  />
+                </div>
+                <Button
+                  variant={colorTheme === 'custom' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleCustomColorChange(customColor)}
+                >
+                  {colorTheme === 'custom' ? 'Previewing' : 'Use This Color'}
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Selected: <span className="font-medium">
+                {colorTheme === 'custom'
+                  ? `Custom (${customColor})`
+                  : FULL_THEMES.find(t => t.name === colorTheme)?.label || colorTheme}
+              </span>. Click <strong>Save All Settings</strong> to persist.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* GST Rates */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Receipt className="h-4 w-4 text-amber-600" />
+              GST Rates
+            </CardTitle>
+            <CardDescription>
+              Both GSTs extracted from the client's total. Bank GST applies only for non-cash payments.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label>Service GST Rate (%)</Label>
                 <Input
@@ -257,16 +412,16 @@ export default function SettingsPage() {
                 />
                 <p className="text-xs text-muted-foreground mt-1">UPI / Bank / Cheque / Other only. Default: 18%</p>
               </div>
-              <div className="rounded-lg bg-muted/40 border p-3 text-xs space-y-1">
-                <p className="font-semibold text-muted-foreground mb-2">Preview — ₹2,000 fee</p>
-                <p className="font-medium">Cash:</p>
-                <p className="pl-3">Service GST = ₹{Math.round(2000 * sR / (100 + sR))} &nbsp;|&nbsp; Net = ₹{Math.round(2000 * 100 / (100 + sR))}</p>
-                <p className="font-medium mt-1">Bank/UPI:</p>
-                <p className="pl-3">Service GST = ₹{Math.round(2000 * sR / (100 + sR + bR))} + Bank GST = ₹{Math.round(2000 * bR / (100 + sR + bR))} &nbsp;|&nbsp; Net = ₹{Math.round(2000 * 100 / (100 + sR + bR))}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+            <div className="rounded-lg bg-muted/40 border p-3 text-xs space-y-1 mt-4">
+              <p className="font-semibold text-muted-foreground mb-2">Preview — ₹2,000 fee</p>
+              <p className="font-medium">Cash:</p>
+              <p className="pl-3">Service GST = ₹{Math.round(2000 * sR / (100 + sR))} &nbsp;|&nbsp; Net = ₹{Math.round(2000 * 100 / (100 + sR))}</p>
+              <p className="font-medium mt-1">Bank/UPI:</p>
+              <p className="pl-3">Service GST = ₹{Math.round(2000 * sR / (100 + sR + bR))} + Bank GST = ₹{Math.round(2000 * bR / (100 + sR + bR))} &nbsp;|&nbsp; Net = ₹{Math.round(2000 * 100 / (100 + sR + bR))}</p>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Message Templates */}
         <Card>
@@ -280,7 +435,6 @@ export default function SettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Variable reference */}
             <div className="flex flex-wrap gap-2 p-3 bg-muted/40 rounded-lg border">
               <span className="text-xs text-muted-foreground self-center mr-1 font-medium">Available variables:</span>
               {TEMPLATE_VARS.map(v => (

@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { useEffect } from "react";
-import { loadSettings, applyTheme } from "@/hooks/use-settings";
+import { loadSettings, applyFullTheme } from "@/hooks/use-settings";
 import NotFound from "@/pages/not-found";
 
 import Login from "@/pages/login";
@@ -65,7 +65,7 @@ function Router() {
 function ThemeApplier() {
   useEffect(() => {
     const s = loadSettings();
-    applyTheme(s.colorTheme || 'Blue');
+    applyFullTheme(s.colorTheme || 'sky-blue', s.customColor);
   }, []);
   return null;
 }
