@@ -245,7 +245,7 @@ export default function LeadDetail() {
                 <CardContent className="grid grid-cols-2 gap-3">
                   <InfoRow label="Full Name" value={lead.pax_name} />
                   <InfoRow label="Phone" value={lead.phone} />
-                  <InfoRow label="WhatsApp" value={lead.whatsapp} />
+                  <InfoRow label="Alt. Phone" value={lead.alt_phone} />
                   <InfoRow label="Email" value={lead.email} />
                   <InfoRow label="Passport No." value={lead.passport_no} />
                   <InfoRow label="Date of Birth" value={lead.dob} />

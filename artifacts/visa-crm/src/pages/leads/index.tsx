@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatINR, calcGST } from '@/utils/gst';
 import { useSettings } from '@/hooks/use-settings';
 import { Link } from 'wouter';
-import { Plus, Search, Download, Phone, MessageCircle, Upload, FileText, X, SlidersHorizontal } from 'lucide-react';
+import { Plus, Search, Download, Phone, MessageCircle, Upload, FileText, X, SlidersHorizontal, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { openWhatsApp } from '@/utils/whatsapp';
@@ -54,12 +54,17 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
   const [uploading, setUploading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<{ file: File; name: string }[]>([]);
   const [countryCode, setCountryCode] = useState('+91');
+  const [altCountryCode, setAltCountryCode] = useState('+91');
+  const [duplicateLeads, setDuplicateLeads] = useState<any[]>([]);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
 
   const blankForm = () => {
     const parsed = parsePhone(lead?.phone || '');
+    const parsedAlt = parsePhone(lead?.alt_phone || '');
     return {
     pax_name: lead?.pax_name || '',
     phone: parsed.number,
+    alt_phone: parsedAlt.number,
     email: lead?.email || '',
     address: lead?.address || '',
     passport_no: lead?.passport_no || '',
@@ -87,8 +92,12 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
   useEffect(() => {
     setTab('pax');
     setPendingFiles([]);
+    setDuplicateLeads([]);
+    setShowDuplicateDialog(false);
     const parsed = parsePhone(lead?.phone || '');
+    const parsedAlt = parsePhone(lead?.alt_phone || '');
     setCountryCode(parsed.code);
+    setAltCountryCode(parsedAlt.code);
     setForm(blankForm());
   }, [lead?.id, open]);
 
@@ -116,6 +125,21 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
     const agent = agents?.find(a => a.id === id);
     set('assigned_to', id);
     set('agent_name', agent?.full_name || '');
+  };
+
+  const handlePhoneBlur = async () => {
+    if (!form.phone || isEdit) return;
+    const digits = form.phone.replace(/\D/g, '');
+    if (digits.length < 7) return;
+    const { data } = await supabase
+      .from('leads')
+      .select('id, pax_name, service_name, status, phone')
+      .or(`phone.ilike.%${digits},alt_phone.ilike.%${digits}`)
+      .limit(5);
+    if (data && data.length > 0) {
+      setDuplicateLeads(data);
+      setShowDuplicateDialog(true);
+    }
   };
 
   const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -166,7 +190,8 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
       const payload = {
         ...form,
         phone: fullPhone,
-        whatsapp: fullPhone, // single phone field — keep DB column in sync
+        whatsapp: fullPhone,
+        alt_phone: form.alt_phone ? `${altCountryCode}${form.alt_phone}` : null,
         service_id: form.service_id === '__other__' ? null : form.service_id || null,
         base_fee: baseFee,
         amount_paid: Number(form.amount_paid) || 0,
@@ -241,9 +266,27 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
                     onChange={e => setCountryCode(e.target.value)}
                     placeholder="+91"
                   />
-                  <Input className="rounded-l-none flex-1" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="98765 43210" />
+                  <Input
+                    className="rounded-l-none flex-1"
+                    value={form.phone}
+                    onChange={e => set('phone', e.target.value)}
+                    onBlur={handlePhoneBlur}
+                    placeholder="98765 43210"
+                  />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Country code editable — default +91 (India)</p>
+              </div>
+              <div className="col-span-2">
+                <Label>Alternate Phone <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <div className="flex">
+                  <Input
+                    className="w-[72px] rounded-r-none text-center px-2"
+                    value={altCountryCode}
+                    onChange={e => setAltCountryCode(e.target.value)}
+                    placeholder="+91"
+                  />
+                  <Input className="rounded-l-none flex-1" value={form.alt_phone} onChange={e => set('alt_phone', e.target.value)} placeholder="Second number" />
+                </div>
               </div>
               <div className="col-span-2">
                 <Label>Service</Label>
@@ -482,6 +525,39 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={createLead.isPending || updateLead.isPending || uploading}>
             {uploading ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Lead'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Duplicate phone number warning */}
+    <Dialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-amber-600">
+            <AlertTriangle className="h-5 w-5" /> Number Already Registered
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          This phone number is linked to {duplicateLeads.length} existing lead(s):
+        </p>
+        <div className="space-y-2 max-h-52 overflow-y-auto">
+          {duplicateLeads.map(dl => (
+            <div key={dl.id} className="flex items-center justify-between rounded-lg border p-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{dl.pax_name}</p>
+                <p className="text-xs text-muted-foreground">{dl.service_name || '—'} · {dl.status}</p>
+                <p className="text-xs text-muted-foreground">{dl.phone}</p>
+              </div>
+              <Link href={`/leads/${dl.id}`} onClick={() => { setShowDuplicateDialog(false); onClose(); }}>
+                <Button variant="outline" size="sm" className="ml-2 shrink-0">Open Lead</Button>
+              </Link>
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setShowDuplicateDialog(false)}>
+            Continue Adding
           </Button>
         </DialogFooter>
       </DialogContent>
