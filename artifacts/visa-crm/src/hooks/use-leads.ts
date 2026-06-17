@@ -232,6 +232,21 @@ export function useDeleteLead() {
   });
 }
 
+export function useUpdateLeadPayment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: any }) => {
+      const { data, error } = await supabase.from('lead_payments').update(updates).eq('id', id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['lead_payments', data.lead_id] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+}
+
 export function useBulkDeleteLeads() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -3,7 +3,7 @@ import { useParams, Link } from 'wouter';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import {
   useLead, useLeadNotes, useLeadPayments, useLeadDocuments, useLeadHistory,
-  useCreateLeadNote, useCreateLeadPayment, useUpdateLead, useDeleteLead,
+  useCreateLeadNote, useCreateLeadPayment, useUpdateLeadPayment, useUpdateLead, useDeleteLead,
 } from '@/hooks/use-leads';
 import { useAuth } from '@/context/AuthContext';
 import { LeadStatusBadge } from '@/components/ui/status-badge';
@@ -18,7 +18,7 @@ import { formatINR, calcGST } from '@/utils/gst';
 import { useSettings } from '@/hooks/use-settings';
 import { buildWAUrl } from '@/utils/whatsapp';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, MessageCircle, Phone, Mail, Upload, FileText, Clock, ExternalLink, Trash2 } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Phone, Mail, Upload, FileText, Clock, ExternalLink, Trash2, Pencil } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 
@@ -61,6 +61,9 @@ export default function LeadDetail() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'Cash', note: '', payment_date: '' });
   const [paymentWA, setPaymentWA] = useState<{ url: string; amount: string } | null>(null);
+  const [editPayment, setEditPayment] = useState<any>(null);
+  const [editPayForm, setEditPayForm] = useState({ amount: '', method: 'Cash', note: '', payment_date: '' });
+  const updatePayment = useUpdateLeadPayment();
   const [uploading, setUploading] = useState(false);
   const [newStatus, setNewStatus] = useState('');
   const { settings } = useSettings();
@@ -116,6 +119,35 @@ export default function LeadDetail() {
       if (waUrl && waUrl !== '#') {
         setPaymentWA({ url: waUrl, amount: formatINR(amount) });
       }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  const handleUpdatePayment = async () => {
+    if (!editPayment) return;
+    const newAmount = Number(editPayForm.amount);
+    if (!newAmount || newAmount <= 0) { toast({ title: 'Enter a valid amount', variant: 'destructive' }); return; }
+    const oldAmount = editPayment.amount;
+    const newLeadPaid = Math.max(0, (lead.amount_paid || 0) - oldAmount + newAmount);
+    try {
+      await updatePayment.mutateAsync({
+        id: editPayment.id,
+        updates: { amount: newAmount, method: editPayForm.method, note: editPayForm.note || null, payment_date: editPayForm.payment_date || null },
+      });
+      await updateLead.mutateAsync({ id: id!, updates: { amount_paid: newLeadPaid } });
+
+      const now = new Date();
+      const date = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const time = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      const updatedLead = { ...lead, amount_paid: newLeadPaid };
+      const waUrl = (lead.whatsapp || lead.phone)
+        ? buildWAUrl(updatedLead, 'payment_received', { this_payment: formatINR(newAmount), date, time })
+        : null;
+
+      toast({ title: `Payment updated to ${formatINR(newAmount)}` });
+      if (waUrl && waUrl !== '#') setPaymentWA({ url: waUrl, amount: formatINR(newAmount) });
+      setEditPayment(null);
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
@@ -490,14 +522,25 @@ export default function LeadDetail() {
               {payments?.length === 0 && <p className="text-muted-foreground text-sm text-center py-6">No payments recorded.</p>}
               {payments?.map((p: any) => (
                 <Card key={p.id}>
-                  <CardContent className="pt-3 pb-3 flex items-center justify-between">
-                    <div>
+                  <CardContent className="pt-3 pb-3 flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
                       <p className="font-semibold font-mono">{formatINR(p.amount)}</p>
                       <p className="text-xs text-muted-foreground">
-                      {p.method}{p.payment_date ? ` · ${p.payment_date}` : ''}{p.note ? ` · ${p.note}` : ''}
-                    </p>
+                        {p.method}{p.payment_date ? ` · ${p.payment_date}` : ''}{p.note ? ` · ${p.note}` : ''}
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">{new Date(p.created_at).toLocaleString('en-IN')}</p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <p className="text-xs text-muted-foreground">{new Date(p.created_at).toLocaleString('en-IN')}</p>
+                      {can('pay_record') && (
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground"
+                          onClick={() => {
+                            setEditPayment(p);
+                            setEditPayForm({ amount: String(p.amount), method: p.method || 'Cash', note: p.note || '', payment_date: p.payment_date || '' });
+                          }}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -561,6 +604,48 @@ export default function LeadDetail() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Edit payment dialog */}
+      <Dialog open={!!editPayment} onOpenChange={open => { if (!open) setEditPayment(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Payment</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div>
+              <Label>Amount (₹)</Label>
+              <Input type="number" value={editPayForm.amount}
+                onChange={e => setEditPayForm(f => ({ ...f, amount: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Method</Label>
+              <Select value={editPayForm.method} onValueChange={v => setEditPayForm(f => ({ ...f, method: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Date</Label>
+              <Input type="date" value={editPayForm.payment_date}
+                onChange={e => setEditPayForm(f => ({ ...f, payment_date: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Note (optional)</Label>
+              <Input value={editPayForm.note}
+                onChange={e => setEditPayForm(f => ({ ...f, note: e.target.value }))}
+                placeholder="e.g., advance..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPayment(null)}>Cancel</Button>
+            <Button onClick={handleUpdatePayment} disabled={updatePayment.isPending || updateLead.isPending}>
+              {updatePayment.isPending ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

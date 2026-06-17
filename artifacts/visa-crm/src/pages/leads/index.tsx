@@ -21,7 +21,7 @@ import { Link } from 'wouter';
 import { Plus, Search, Download, Phone, MessageCircle, Upload, FileText, X, SlidersHorizontal, AlertTriangle, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
-import { openWhatsApp } from '@/utils/whatsapp';
+import { openWhatsApp, buildWAUrl } from '@/utils/whatsapp';
 
 const STATUSES = ['All', 'Under Process', 'Follow-up', 'Submitted', 'Completed', 'Cancelled'];
 const SOURCES = ['All', 'Walk-in', 'Referral', 'Online', 'Phone', 'WhatsApp', 'Other'];
@@ -69,6 +69,7 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
   const [showAlt, setShowAlt] = useState(false);    // show alt phone field
   const [duplicateLeads, setDuplicateLeads] = useState<any[]>([]);
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const [waLead, setWaLead] = useState<any>(null);  // newly created lead pending WA send
 
   const blankForm = () => {
     const parsed = parsePhone(lead?.phone || '');
@@ -108,6 +109,7 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
     setPendingFiles([]);
     setDuplicateLeads([]);
     setShowDuplicateDialog(false);
+    setWaLead(null);
     const parsed = parsePhone(lead?.phone || '');
     const parsedAlt = parsePhone(lead?.alt_phone || '');
     const parsedWA = parsePhone(lead?.whatsapp || '');
@@ -232,22 +234,24 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
       if (isEdit) {
         const statusChanged = payload.status !== lead.status;
         await updateLead.mutateAsync({ id: lead.id, updates: payload, logStatus: statusChanged });
+        if (pendingFiles.length > 0 && leadId) await uploadPendingDocs(leadId);
         toast({ title: 'Lead updated successfully' });
         if (statusChanged && (payload.whatsapp || payload.phone)) {
           setTimeout(() => openWhatsApp({ ...lead, ...payload }, 'status_update'), 300);
         }
+        onClose();
       } else {
         const created = await createLead.mutateAsync(payload);
         leadId = (created as any)?.id || lead?.id;
+        if (pendingFiles.length > 0 && leadId) await uploadPendingDocs(leadId);
         toast({ title: 'Lead created successfully' });
         if (created && (payload.whatsapp || payload.phone)) {
-          openWhatsApp(created, 'welcome');
+          setWaLead(created);
+          // stay open — user will close after tapping WhatsApp or Skip
+        } else {
+          onClose();
         }
       }
-      if (pendingFiles.length > 0 && leadId) {
-        await uploadPendingDocs(leadId);
-      }
-      onClose();
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
@@ -590,10 +594,28 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
         </Tabs>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={createLead.isPending || updateLead.isPending || uploading}>
-            {uploading ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Lead'}
-          </Button>
+          {waLead ? (
+            <div className="flex items-center gap-2 w-full justify-end flex-wrap">
+              <Button variant="outline" onClick={() => { setWaLead(null); onClose(); }}>Skip</Button>
+              <a
+                href={buildWAUrl(waLead, 'welcome')}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => { setWaLead(null); onClose(); }}
+                className="inline-flex items-center gap-2 rounded-md bg-[#25D366] px-4 py-2 text-sm font-semibold text-white hover:bg-[#128C7E] transition-colors"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Send Welcome on WhatsApp
+              </a>
+            </div>
+          ) : (
+            <>
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+              <Button onClick={handleSubmit} disabled={createLead.isPending || updateLead.isPending || uploading}>
+                {uploading ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Lead'}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
