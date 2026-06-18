@@ -233,13 +233,19 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
       let leadId = lead?.id;
       if (isEdit) {
         const statusChanged = payload.status !== lead.status;
+        const paymentChanged = Number(payload.base_fee) !== Number(lead.base_fee) || Number(payload.amount_paid) !== Number(lead.amount_paid);
         await updateLead.mutateAsync({ id: lead.id, updates: payload, logStatus: statusChanged });
         if (pendingFiles.length > 0 && leadId) await uploadPendingDocs(leadId);
         toast({ title: 'Lead updated successfully' });
         if (statusChanged && (payload.whatsapp || payload.phone)) {
           setTimeout(() => openWhatsApp({ ...lead, ...payload }, 'status_update'), 300);
         }
-        onClose();
+        if (paymentChanged && (payload.whatsapp || payload.phone)) {
+          setWaLead({ ...lead, ...payload, __waType: 'payment' });
+          // stay open for WA button
+        } else {
+          onClose();
+        }
       } else {
         const created = await createLead.mutateAsync(payload);
         leadId = (created as any)?.id || lead?.id;
@@ -594,21 +600,30 @@ function LeadFormModal({ open, onClose, lead }: { open: boolean; onClose: () => 
         </Tabs>
 
         <DialogFooter>
-          {waLead ? (
-            <div className="flex items-center gap-2 w-full justify-end flex-wrap">
-              <Button variant="outline" onClick={() => { setWaLead(null); onClose(); }}>Skip</Button>
-              <a
-                href={buildWAUrl(waLead, 'welcome')}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => { setWaLead(null); onClose(); }}
-                className="inline-flex items-center gap-2 rounded-md bg-[#25D366] px-4 py-2 text-sm font-semibold text-white hover:bg-[#128C7E] transition-colors"
-              >
-                <MessageCircle className="h-4 w-4" />
-                Send Welcome on WhatsApp
-              </a>
-            </div>
-          ) : (
+          {waLead ? (() => {
+            const isPayment = waLead.__waType === 'payment';
+            const now = new Date();
+            const extraVars = isPayment ? {
+              this_payment: formatINR(Number(waLead.amount_paid) || 0),
+              date: now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+              time: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+            } : undefined;
+            return (
+              <div className="flex items-center gap-2 w-full justify-end flex-wrap">
+                <Button variant="outline" onClick={() => { setWaLead(null); onClose(); }}>Skip</Button>
+                <a
+                  href={buildWAUrl(waLead, isPayment ? 'payment_received' : 'welcome', extraVars)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => { setWaLead(null); onClose(); }}
+                  className="inline-flex items-center gap-2 rounded-md bg-[#25D366] px-4 py-2 text-sm font-semibold text-white hover:bg-[#128C7E] transition-colors"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  {isPayment ? 'Send Payment Receipt on WhatsApp' : 'Send Welcome on WhatsApp'}
+                </a>
+              </div>
+            );
+          })() : (
             <>
               <Button variant="outline" onClick={onClose}>Cancel</Button>
               <Button onClick={handleSubmit} disabled={createLead.isPending || updateLead.isPending || uploading}>
