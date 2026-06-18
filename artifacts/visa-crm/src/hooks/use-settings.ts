@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { SERVICE_GST_RATE_DEFAULT, BANK_GST_RATE_DEFAULT } from '@/utils/gst';
+import { supabase } from '@/lib/supabase';
 
 export interface MessageTemplates {
   welcome: string;
@@ -36,7 +37,7 @@ export const DEFAULT_MESSAGES: MessageTemplates = {
   cancelled:
     'Hello {name},\n\nRegarding your *{service}* application:\n\nYour application has been cancelled. Please contact us for further assistance.',
   payment_received:
-    'Hello {name},\n\nWe have received your payment of *{this_payment}* on {date} at {time}.\n\nService: *{service}*\nTotal Fee: {fee}\nTotal Paid: {paid}\nBalance Due: {balance}\n\nThank you! 🙏',
+    'Hello {name},\n\nWe have received your payment of *{this_payment}* on {date} at {time}.\n\nService: *{service}*\nTotal Fee: {fee}\nAmount Paid: *{this_payment}*\nTotal Paid: {paid}\nBalance: {balance}\n\nThank you! 🙏',
   payment_reminder:
     'Hello {name},\n\nThis is a gentle reminder regarding your pending balance for the *{service}* application.\n\nTotal Fee: {fee}\nAmount Paid: {paid}\n*Balance Due: {balance}*\n\nPlease arrange for the payment at your earliest convenience.',
 };
@@ -258,6 +259,15 @@ export const SETTING_DEFAULTS: CRMSettings = {
   customColor: '#1A5FB4',
 };
 
+// Auto-migrate old message templates (e.g. payment_received without {this_payment})
+function migrateMessages(messages: MessageTemplates): MessageTemplates {
+  const m = { ...messages };
+  if (!m.payment_received.includes('{this_payment}')) {
+    m.payment_received = DEFAULT_MESSAGES.payment_received;
+  }
+  return m;
+}
+
 export function loadSettings(): CRMSettings {
   try {
     const stored = localStorage.getItem(SETTINGS_KEY);
@@ -266,10 +276,44 @@ export function loadSettings(): CRMSettings {
     return {
       ...SETTING_DEFAULTS,
       ...parsed,
-      messages: { ...DEFAULT_MESSAGES, ...(parsed.messages || {}) },
+      messages: migrateMessages({ ...DEFAULT_MESSAGES, ...(parsed.messages || {}) }),
     };
   } catch {
     return SETTING_DEFAULTS;
+  }
+}
+
+// Push to Supabase company_settings table (non-blocking, called after each save)
+async function pushToDB(settings: CRMSettings) {
+  try {
+    await supabase
+      .from('company_settings')
+      .upsert({ id: true, data: settings, updated_at: new Date().toISOString() });
+  } catch {
+    // non-critical — app works without DB sync
+  }
+}
+
+// Pull settings from Supabase and apply (called on app start so all users get same settings)
+export async function syncSettingsFromDB() {
+  try {
+    const { data } = await supabase
+      .from('company_settings')
+      .select('data')
+      .eq('id', true)
+      .maybeSingle();
+    if (!data?.data) return;
+    const remote = data.data as Partial<CRMSettings>;
+    const merged: CRMSettings = {
+      ...SETTING_DEFAULTS,
+      ...remote,
+      messages: migrateMessages({ ...DEFAULT_MESSAGES, ...((remote.messages as MessageTemplates) || {}) }),
+    };
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
+    applyFullTheme(merged.colorTheme || 'sky-blue', merged.customColor);
+    window.dispatchEvent(new Event('crm-settings-changed'));
+  } catch {
+    // fall back to localStorage silently
   }
 }
 
@@ -285,6 +329,7 @@ export function useSettings() {
     setSettings(next);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
     window.dispatchEvent(new Event('crm-settings-changed'));
+    pushToDB(next); // sync to DB so all users see updated settings
     return next;
   };
 
